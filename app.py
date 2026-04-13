@@ -2,6 +2,9 @@ import os, json, uuid
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, send_from_directory, url_for, session
 from flask_socketio import SocketIO, emit, join_room
+import boto3
+from botocore.config import Config
+from botocore.exceptions import ClientError
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'supersecretkey123'
@@ -9,11 +12,45 @@ app.config['UPLOAD_FOLDER'] = 'static/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 ALLOWED_EXTENSIONS = {'mp4', 'mov', 'avi', 'mkv', 'webm'}
 
+# Настройки Backblaze B2 из переменных окружения Render
+B2_ACCESS_KEY = os.environ.get('B2_ACCESS_KEY', '')
+B2_SECRET_KEY = os.environ.get('B2_SECRET_KEY', '')
+B2_ENDPOINT = os.environ.get('B2_ENDPOINT', 'https://s3.us-east-005.backblazeb2.com')
+B2_BUCKET = os.environ.get('B2_BUCKET', 'TADT-videos')
+
+# Проверка, что ключи заданы
+if not B2_ACCESS_KEY or not B2_SECRET_KEY:
+    print("⚠️ WARNING: B2 credentials not set. Videos will be stored locally!")
+
+# Инициализируем клиент B2
+s3 = boto3.client(
+    's3',
+    endpoint_url=B2_ENDPOINT,
+    aws_access_key_id=B2_ACCESS_KEY,
+    aws_secret_access_key=B2_SECRET_KEY,
+    config=Config(signature_version='s3v4')
+)
+
 socketio = SocketIO(app, cors_allowed_origins="*")
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 DB_FILE = 'data.json'
 
 def allowed_file(f): return '.' in f and f.rsplit('.',1)[1].lower() in ALLOWED_EXTENSIONS
+
+def generate_signed_url(filename, expiration=3600):
+    """Генерирует временную ссылку на видео в приватном бакете"""
+    if not B2_ACCESS_KEY:
+        return None
+    try:
+        url = s3.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': B2_BUCKET, 'Key': filename},
+            ExpiresIn=expiration
+        )
+        return url
+    except ClientError as e:
+        print(f"Error generating signed URL: {e}")
+        return None
 
 def load_data():
     if not os.path.exists(DB_FILE): return {"videos": [], "users": {}, "chats": {}, "streaks": {}}
@@ -81,7 +118,10 @@ def get_videos():
     videos = data.get('videos', [])
     cur = session.get('username')
     for v in videos:
-        v['url'] = url_for('uploaded_file', filename=v['filename'])
+        if v.get('storage') == 'b2' and B2_ACCESS_KEY:
+            v['url'] = generate_signed_url(v['filename'])
+        else:
+            v['url'] = url_for('uploaded_file', filename=v['filename'])
         if 'comments' not in v: v['comments'] = []
         if 'reposts' not in v: v['reposts'] = 0
         if cur and cur in data.get('users', {}):
@@ -167,8 +207,13 @@ def share_video():
         chat_id = uuid.uuid4().hex
         data['chats'][chat_id] = {'id': chat_id, 'participants': [cur, target], 'messages': []}
     
+    if video.get('storage') == 'b2' and B2_ACCESS_KEY:
+        video_url = generate_signed_url(video['filename'])
+    else:
+        video_url = url_for('uploaded_file', filename=video['filename'])
+    
     msg = {'id': uuid.uuid4().hex, 'from': cur, 'type': 'video', 'video_id': video_id,
-           'video_url': url_for('uploaded_file', filename=video['filename']),
+           'video_url': video_url,
            'video_author': video['author'], 'video_description': video['description'],
            'text': request.json.get('text', '📹 Поделился видео'),
            'time': datetime.now().strftime('%H:%M'), 'timestamp': datetime.now().isoformat()}
@@ -186,12 +231,34 @@ def upload():
     f = request.files['video']
     if f.filename == '': return jsonify({'error': 'Empty'}), 400
     if not allowed_file(f.filename): return jsonify({'error': 'Format not allowed'}), 400
+    
     ext = f.filename.rsplit('.',1)[1].lower()
-    new_fn = f"{uuid.uuid4().hex}.{ext}"
-    f.save(os.path.join(app.config['UPLOAD_FOLDER'], new_fn))
+    new_filename = f"{uuid.uuid4().hex}.{ext}"
+    
+    # Пытаемся загрузить в B2 (если ключи заданы)
+    storage = 'local'
+    if B2_ACCESS_KEY and B2_SECRET_KEY:
+        try:
+            s3.upload_fileobj(
+                f,
+                B2_BUCKET,
+                new_filename,
+                ExtraArgs={'ContentType': f'video/{ext}'}
+            )
+            storage = 'b2'
+            print(f"Video uploaded to B2: {new_filename}")
+        except Exception as e:
+            print(f"B2 upload failed: {e}, saving locally")
+            f.seek(0)
+            f.save(os.path.join(app.config['UPLOAD_FOLDER'], new_filename))
+    else:
+        print("B2 not configured, saving locally")
+        f.save(os.path.join(app.config['UPLOAD_FOLDER'], new_filename))
+    
     data = load_data()
-    video = {'id': uuid.uuid4().hex, 'filename': new_fn, 'likes': 0, 'liked_by': [],
-             'favorited_by': [], 'reposts': 0, 'reposted_by': [], 'comments': [], 
+    video = {'id': uuid.uuid4().hex, 'filename': new_filename, 'storage': storage,
+             'likes': 0, 'liked_by': [], 'favorited_by': [], 'reposts': 0, 
+             'reposted_by': [], 'comments': [], 
              'description': request.form.get('description', ''),
              'author': request.form.get('author', 'Аноним'), 'created_at': uuid.uuid4().hex}
     data['videos'].insert(0, video)
@@ -284,7 +351,10 @@ def user_videos(action):
     ids = data['users'][cur].get('liked_videos' if action == 'liked' else 'favorite_videos', [])
     videos = [v for v in data['videos'] if v['id'] in ids]
     for v in videos:
-        v['url'] = url_for('uploaded_file', filename=v['filename'])
+        if v.get('storage') == 'b2' and B2_ACCESS_KEY:
+            v['url'] = generate_signed_url(v['filename'])
+        else:
+            v['url'] = url_for('uploaded_file', filename=v['filename'])
     return jsonify(videos)
 
 @app.route('/static/uploads/<filename>')

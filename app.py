@@ -1,6 +1,3 @@
-import eventlet
-eventlet.monkey_patch()
-
 import os, json, uuid
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, send_from_directory, url_for, session

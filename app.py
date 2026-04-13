@@ -1,3 +1,6 @@
+import eventlet
+eventlet.monkey_patch()
+
 import os, json, uuid
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, send_from_directory, url_for, session
@@ -18,7 +21,6 @@ B2_SECRET_KEY = os.environ.get('B2_SECRET_KEY', '')
 B2_ENDPOINT = os.environ.get('B2_ENDPOINT', 'https://s3.us-east-005.backblazeb2.com')
 B2_BUCKET = os.environ.get('B2_BUCKET', 'TADT-videos')
 
-# Проверка, что ключи заданы
 if not B2_ACCESS_KEY or not B2_SECRET_KEY:
     print("⚠️ WARNING: B2 credentials not set. Videos will be stored locally!")
 
@@ -38,7 +40,6 @@ DB_FILE = 'data.json'
 def allowed_file(f): return '.' in f and f.rsplit('.',1)[1].lower() in ALLOWED_EXTENSIONS
 
 def generate_signed_url(filename, expiration=3600):
-    """Генерирует временную ссылку на видео в приватном бакете"""
     if not B2_ACCESS_KEY:
         return None
     try:
@@ -235,7 +236,6 @@ def upload():
     ext = f.filename.rsplit('.',1)[1].lower()
     new_filename = f"{uuid.uuid4().hex}.{ext}"
     
-    # Пытаемся загрузить в B2 (если ключи заданы)
     storage = 'local'
     if B2_ACCESS_KEY and B2_SECRET_KEY:
         try:

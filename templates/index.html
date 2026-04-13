@@ -65,7 +65,6 @@
         @keyframes slideUp{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
         .toast-icon{width:18px;height:18px;border-radius:50%}
         
-        /* МОБИЛЬНАЯ АДАПТАЦИЯ */
         @media (max-width: 768px) {
             .right-actions { gap: 12px; bottom: 20px; right: 8px; }
             .action-icon { width: 40px; height: 40px; }
@@ -115,8 +114,9 @@
         let currentUser=null,allVideos=[],currentChatId=null,currentChatUser=null,pendingShareVideoId=null,currentCommentsVideoId=null,socket=null;
         let observer=null,currentPlayingVideo=null;
         let pauseTimeout=null;
+        let scrollTimeout=null;
         
-        async function init(){await checkAuth();await loadFeed();setupEventListeners();connectSocket();loadChats()}
+        async function init(){await checkAuth();await loadFeed();setupEventListeners();connectSocket();loadChats();setupScrollHandler();}
         async function checkAuth(){let r=await fetch('/api/me'),d=await r.json();if(!d.username){let n=prompt('Ваше имя:','Пользователь');if(n)await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:n})})}let mr=await fetch('/api/me');currentUser=(await mr.json()).username;document.getElementById('profileUsername').innerText=currentUser||'Профиль'}
         function connectSocket(){
             socket=io();
@@ -146,20 +146,71 @@
                 pauseTimeout=setTimeout(()=>overlay.classList.remove('show'),800);
             }
         }
+        function syncVideoPlayback(){
+            const videos = document.querySelectorAll('video');
+            if(videos.length === 0) return;
+            const feedRect = document.getElementById('feed').getBoundingClientRect();
+            const centerY = feedRect.top + feedRect.height / 2;
+            let closestVideo = null;
+            let closestDist = Infinity;
+            videos.forEach(video => {
+                const rect = video.getBoundingClientRect();
+                const videoCenter = rect.top + rect.height / 2;
+                const dist = Math.abs(videoCenter - centerY);
+                if(dist < closestDist){
+                    closestDist = dist;
+                    closestVideo = video;
+                }
+            });
+            videos.forEach(video => {
+                if(video === closestVideo){
+                    if(video.paused) video.play().catch(e=>console.log('play error'));
+                    if(currentPlayingVideo !== video) currentPlayingVideo = video;
+                } else {
+                    video.pause();
+                }
+            });
+        }
+        function setupScrollHandler(){
+            const feed = document.getElementById('feed');
+            feed.addEventListener('scroll', () => {
+                if(scrollTimeout) clearTimeout(scrollTimeout);
+                scrollTimeout = setTimeout(() => {
+                    syncVideoPlayback();
+                }, 50);
+            });
+            setInterval(() => {
+                syncVideoPlayback();
+            }, 1000);
+        }
         function renderFeed(v){
             let fd=document.getElementById('feed'),es=document.getElementById('emptyState');
             if(!v.length){fd.innerHTML='';es.style.display='block';return}
             es.style.display='none';
             fd.innerHTML=v.map(v=>`<div class="video-card" data-video-src="${v.url}" data-video-id="${v.id}"><div class="pause-overlay"><div class="pause-icon"><svg viewBox="0 0 24 24"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg></div></div><div class="info"><div class="author">${escapeHtml(v.author)}${v.is_reposted ? `<span class="repost-badge"><img src="https://litter.catbox.moe/f38hn74sf7dz8icn.png"> Вы сделали репост</span>` : ''}</div><div class="description">${escapeHtml(v.description)}</div></div><div class="right-actions"><button class="action-btn" onclick="toggleLike('${v.id}')"><div class="action-icon"><img src="https://litter.catbox.moe/cc6xqtjryvn6oebj.png"></div><span>${v.likes}</span></button><button class="action-btn" onclick="toggleFavorite('${v.id}')"><div class="action-icon"><img src="https://litter.catbox.moe/m21bqybjmge8b4uw.png"></div><span>${v.is_favorite?'★':'☆'}</span></button><button class="action-btn" onclick="toggleRepost('${v.id}')"><div class="action-icon"><img src="https://litter.catbox.moe/ba4xxrmzpqx4mh09.png"></div><span>${v.reposts||0}</span></button><button class="action-btn" onclick="openComments('${v.id}')"><div class="action-icon"><img src="https://litter.catbox.moe/avrc86gvvbg2pgud.png"></div><span>${v.comments?v.comments.length:0}</span></button><button class="action-btn" onclick="shareVideo('${v.id}')"><div class="action-icon">↗️</div><span>Пересл</span></button></div></div>`).join('');
-            setupLazyLoading();
-            setTimeout(()=>{let fc=document.querySelector('.video-card');if(fc&&!fc.querySelector('video')){let vs=fc.dataset.videoSrc;if(vs){let v=document.createElement('video');v.src=vs;v.loop=true;v.playsinline=true;v.preload='auto';v.style.height='100vh';v.style.width='auto';v.style.maxWidth='100vw';v.style.objectFit='contain';let overlay=fc.querySelector('.pause-overlay');v.addEventListener('click',(e)=>{e.stopPropagation();togglePause(v,overlay);});fc.insertBefore(v,fc.firstChild);v.play();currentPlayingVideo=v;if(observer)observer.unobserve(fc);}}},100);
-        }
-        function setupLazyLoading(){
-            if(observer)observer.disconnect();
-            observer=new IntersectionObserver((e)=>{e.forEach(entry=>{let c=entry.target,vid=c.querySelector('video');if(entry.isIntersecting){if(!vid){let src=c.dataset.videoSrc;if(src){vid=document.createElement('video');vid.src=src;vid.loop=true;vid.playsinline=true;vid.preload='auto';vid.style.height='100vh';vid.style.width='auto';vid.style.maxWidth='100vw';vid.style.objectFit='contain';let overlay=c.querySelector('.pause-overlay');vid.addEventListener('click',(e)=>{e.stopPropagation();togglePause(vid,overlay);});c.insertBefore(vid,c.firstChild);vid.play();if(currentPlayingVideo&&currentPlayingVideo!==vid)currentPlayingVideo.pause();currentPlayingVideo=vid;observer.unobserve(c);}}else{vid.play();if(currentPlayingVideo&&currentPlayingVideo!==vid)currentPlayingVideo.pause();currentPlayingVideo=vid;}}else{if(vid){vid.pause();if(currentPlayingVideo===vid)currentPlayingVideo=null;}}})},{threshold:0.5});
-            document.querySelectorAll('.video-card').forEach(c=>observer.observe(c));
-            let f=()=>{document.querySelectorAll('video').forEach(v=>v.muted=false);document.removeEventListener('click',f);document.removeEventListener('touchstart',f);}
-            document.addEventListener('click',f);document.addEventListener('touchstart',f);
+            setTimeout(()=>{
+                let cards=document.querySelectorAll('.video-card');
+                cards.forEach(card=>{
+                    if(!card.querySelector('video')){
+                        let src=card.dataset.videoSrc;
+                        if(src){
+                            let vid=document.createElement('video');
+                            vid.src=src;
+                            vid.loop=true;
+                            vid.playsinline=true;
+                            vid.preload='auto';
+                            vid.style.height='100vh';
+                            vid.style.width='auto';
+                            vid.style.maxWidth='100vw';
+                            vid.style.objectFit='contain';
+                            let overlay=card.querySelector('.pause-overlay');
+                            vid.addEventListener('click',(e)=>{e.stopPropagation();togglePause(vid,overlay);});
+                            card.insertBefore(vid,card.firstChild);
+                        }
+                    }
+                });
+                syncVideoPlayback();
+            },100);
         }
         window.toggleLike=async function(id){let r=await fetch(`/api/toggle_like/${id}`,{method:'POST'});let d=await r.json();if(d.success){updateLikeCount(id,d.likes);}}
         window.toggleFavorite=async function(id){let r=await fetch(`/api/toggle_favorite/${id}`,{method:'POST'});let d=await r.json();if(d.success){updateFavoriteState(id,d.is_favorite);}}

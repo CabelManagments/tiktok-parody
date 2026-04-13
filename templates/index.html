@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>TokParody</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:system-ui,sans-serif;background:#000;color:#fff;overflow:hidden;height:100vh}
+        .feed{height:100vh;overflow-y:scroll;scroll-snap-type:y mandatory}
+        .video-card{scroll-snap-align:start;height:100vh;position:relative;background:#000;display:flex;align-items:center;justify-content:center}
+        video{height:100vh;width:auto;max-width:100vw;object-fit:contain}
+        .info{position:absolute;bottom:20px;left:16px;right:80px;z-index:10}
+        .author{font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+        .repost-badge{display:inline-flex;align-items:center;gap:4px;background:rgba(0,0,0,0.5);backdrop-filter:blur(10px);padding:4px 10px;border-radius:20px;font-size:12px;font-weight:normal;margin-left:8px}
+        .repost-badge img{width:18px;height:18px;border-radius:50%}
+        .description{font-size:13px;opacity:0.9;margin-top:4px}
+        .right-actions{position:absolute;bottom:20px;right:12px;z-index:10;display:flex;flex-direction:column;gap:20px}
+        .action-btn{display:flex;flex-direction:column;align-items:center;gap:4px;background:none;border:none;color:#fff;font-size:11px;cursor:pointer}
+        .action-icon{width:48px;height:48px;display:flex;align-items:center;justify-content:center}
+        .action-icon img{width:44px;height:44px;object-fit:contain}
+        .pause-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:20;opacity:0;transition:opacity 0.2s;pointer-events:none}
+        .pause-overlay.show{opacity:1}
+        .pause-icon{width:70px;height:70px;background:rgba(255,255,255,0.2);border-radius:50%;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(10px)}
+        .pause-icon svg{width:40px;height:40px;fill:#fff}
+        .header{position:fixed;top:0;left:0;right:0;z-index:100;padding:50px 16px 20px;display:flex;justify-content:space-between;background:linear-gradient(to bottom,rgba(0,0,0,0.5),transparent)}
+        .header-btn{background:rgba(0,0,0,0.6);backdrop-filter:blur(10px);border:none;color:#fff;padding:6px 16px;border-radius:30px;cursor:pointer}
+        .modal,.chats-modal,.share-modal,.comments-modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:#000;z-index:200;overflow-y:auto}
+        .modal.active,.chats-modal.active,.share-modal.active,.comments-modal.active{display:block}
+        .modal-header{position:sticky;top:0;background:#000;padding:20px;display:flex;justify-content:space-between;border-bottom:1px solid #333}
+        .chat-item,.user-item{padding:15px;border-bottom:0.5px solid #333;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+        .chat-name{font-weight:700}
+        .chat-last{font-size:12px;opacity:0.7}
+        .streak-badge{background:#fe2c55;border-radius:20px;padding:2px 8px;font-size:11px;margin-left:8px;display:inline-flex;align-items:center;gap:4px}
+        .streak-icon{width:14px;height:14px}
+        .pet-icon{width:35px;height:35px}
+        .messages-container{display:flex;flex-direction:column;height:calc(100vh - 120px);overflow-y:auto;padding:15px}
+        .message{margin-bottom:12px;max-width:80%}
+        .message.from-me{align-self:flex-end}
+        .message-bubble{padding:10px 14px;border-radius:20px;background:#2a2a2e}
+        .message.from-me .message-bubble{background:#fe2c55}
+        .shared-video{background:#1a1a1a;border-radius:12px;padding:10px;margin-top:5px}
+        .shared-video video{width:100%;border-radius:8px;max-height:150px}
+        .message-input-area,.comment-input-area{position:fixed;bottom:0;left:0;right:0;background:#111;padding:12px;display:flex;gap:10px;border-top:0.5px solid #333}
+        .message-input,.comment-input{flex:1;background:#222;border:none;padding:10px;border-radius:25px;color:#fff}
+        .send-btn{background:#fe2c55;border:none;padding:10px 20px;border-radius:25px;color:#fff;cursor:pointer}
+        .comment-item{padding:12px 15px;border-bottom:0.5px solid #333}
+        .comment-author{font-weight:700;font-size:14px}
+        .upload-bar{position:fixed;bottom:0;left:0;right:0;background:rgba(20,20,25,0.95);backdrop-filter:blur(20px);padding:10px 12px;display:flex;gap:8px;z-index:100;transform:translateY(100%);transition:0.3s}
+        .upload-bar.active{transform:translateY(0)}
+        .upload-toggle{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);background:#fe2c55;border:none;color:#fff;padding:8px 20px;border-radius:30px;z-index:101;cursor:pointer}
+        .upload-bar input,.upload-bar button{background:#2a2a2e;border:none;padding:8px 12px;border-radius:25px;color:#fff}
+        .upload-bar button{background:#fe2c55;cursor:pointer}
+        .profile-video{width:calc(33.33% - 6px);margin:3px;aspect-ratio:9/16;background:#111;border-radius:8px;overflow:hidden}
+        .profile-video video{width:100%;height:100%;object-fit:cover}
+        .modal-tabs{display:flex;gap:20px;padding:15px 20px;border-bottom:1px solid #333}
+        .tab{background:none;border:none;color:#888;padding:8px 0;cursor:pointer}
+        .tab.active{color:#fe2c55;border-bottom:2px solid #fe2c55}
+        .empty-state{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center}
+        .feed::-webkit-scrollbar{display:none}
+        .streak-toast{position:fixed;top:80px;left:50%;transform:translateX(-50%);background:#fe2c55;padding:8px 20px;border-radius:30px;z-index:300;animation:slideDown 0.3s;display:flex;align-items:center;gap:8px}
+        .repost-toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);backdrop-filter:blur(20px);padding:12px 20px;border-radius:40px;z-index:300;display:flex;align-items:center;gap:12px;animation:slideUp 0.3s}
+        @keyframes slideDown{from{opacity:0;transform:translateX(-50%) translateY(-20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+        @keyframes slideUp{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+        .toast-icon{width:18px;height:18px;border-radius:50%}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <button class="header-btn" id="chatsBtn">💬 Чаты</button>
+        <button class="header-btn" id="profileBtn">👤 Профиль</button>
+    </div>
+    <div class="feed" id="feed"><div class="empty-state" id="emptyState"><div style="font-size:60px">🎬</div><div>Нет видео</div></div></div>
+    <button class="upload-toggle" id="uploadToggle">📤 Загрузить</button>
+    <div class="upload-bar" id="uploadBar">
+        <input type="text" id="author" placeholder="Имя" value="Пользователь">
+        <input type="text" id="desc" placeholder="Описание">
+        <input type="file" id="videoFile" accept="video/*">
+        <button id="uploadBtn">✅</button>
+    </div>
+    <div class="chats-modal" id="chatsModal"><div class="modal-header"><h3>💬 Чаты</h3><button id="closeChats" style="background:none;border:none;color:#fff;font-size:24px">✕</button></div><div id="chatsList"></div><div style="padding:15px"><button id="newChatBtn" style="background:#fe2c55;border:none;padding:12px;border-radius:30px;color:#fff;width:100%">➕ Новый чат</button></div></div>
+    <div class="share-modal" id="shareModal"><div class="modal-header"><h3 id="shareModalTitle">Выберите пользователя</h3><button id="closeShare" style="background:none;border:none;color:#fff;font-size:24px">✕</button></div><div id="usersList"></div></div>
+    <div class="modal" id="chatModal"><div class="modal-header"><h3 id="chatWithUser">Чат</h3><button id="closeChat" style="background:none;border:none;color:#fff;font-size:24px">✕</button></div><div class="messages-container" id="messagesContainer"></div><div class="message-input-area"><input type="text" class="message-input" id="messageInput" placeholder="Сообщение..."><button class="send-btn" id="sendMessageBtn">Отпр</button></div></div>
+    <div class="comments-modal" id="commentsModal"><div class="modal-header"><h3>💬 Комментарии</h3><button id="closeComments" style="background:none;border:none;color:#fff;font-size:24px">✕</button></div><div id="commentsList" style="padding-bottom:80px"></div><div class="comment-input-area"><input type="text" class="comment-input" id="commentInput" placeholder="Комментарий..."><button class="send-btn" id="sendCommentBtn">Отпр</button></div></div>
+    <div class="modal" id="profileModal"><div class="modal-header"><h3 id="profileUsername">Профиль</h3><button id="closeProfileModal" style="background:none;border:none;color:#fff;font-size:24px">✕</button></div><div class="modal-tabs"><button class="tab active" data-tab="all">Все видео</button><button class="tab" data-tab="liked">Лайки</button><button class="tab" data-tab="favorite">Избранное</button></div><div class="modal-content" id="modalContent" style="padding:20px;display:flex;flex-wrap:wrap"></div></div>
+    <div id="streakToast" class="streak-toast" style="display:none"></div>
+    <div id="repostToast" class="repost-toast" style="display:none"></div>
+    <script>
+        let currentUser=null,allVideos=[],currentChatId=null,currentChatUser=null,pendingShareVideoId=null,currentCommentsVideoId=null,socket=null;
+        let observer=null,currentPlayingVideo=null;
+        let pauseTimeout=null;
+        
+        async function init(){await checkAuth();await loadFeed();setupEventListeners();connectSocket();loadChats()}
+        async function checkAuth(){let r=await fetch('/api/me'),d=await r.json();if(!d.username){let n=prompt('Ваше имя:','Пользователь');if(n)await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:n})})}let mr=await fetch('/api/me');currentUser=(await mr.json()).username;document.getElementById('profileUsername').innerText=currentUser||'Профиль'}
+        function connectSocket(){
+            socket=io();
+            socket.on('connect',()=>socket.emit('join',{username:currentUser}));
+            socket.on('new_message',(data)=>{if(currentChatId===data.chat_id)loadMessages(currentChatId);loadChats();if(data.streak)showStreakToast(data.streak)});
+            socket.on('new_comment',()=>loadFeed());
+            socket.on('streak_update',(data)=>{loadChats();if(currentChatUser===data.with_user)showStreakToast(data.streak)});
+            socket.on('new_repost',()=>loadFeed());
+        }
+        function showStreakToast(s){
+            let t=document.getElementById('streakToast');
+            t.innerHTML=`<img src="https://litter.catbox.moe/off4i8kbw6ubx0uw.png" class="toast-icon"> Серийчик: ${s} дней!`;
+            t.style.display='flex';
+            setTimeout(()=>t.style.display='none',3000);
+        }
+        function showRepostToast(){
+            let t=document.getElementById('repostToast');
+            t.innerHTML=`<img src="https://litter.catbox.moe/f38hn74sf7dz8icn.png" class="toast-icon"> <span>Вы сделали репост</span>`;
+            t.style.display='flex';
+            setTimeout(()=>t.style.display='none',2000);
+        }
+        async function loadFeed(){let r=await fetch('/api/videos');allVideos=await r.json();renderFeed(allVideos)}
+        function pauseAllVideos(){document.querySelectorAll('video').forEach(v=>v.pause());currentPlayingVideo=null;}
+        function togglePause(video,overlay){
+            if(video.paused){
+                video.play();
+                overlay.classList.remove('show');
+            }else{
+                video.pause();
+                overlay.classList.add('show');
+                if(pauseTimeout) clearTimeout(pauseTimeout);
+                pauseTimeout=setTimeout(()=>overlay.classList.remove('show'),800);
+            }
+        }
+        function renderFeed(v){
+            let fd=document.getElementById('feed'),es=document.getElementById('emptyState');
+            if(!v.length){fd.innerHTML='';es.style.display='block';return}
+            es.style.display='none';
+            fd.innerHTML=v.map(v=>`<div class="video-card" data-video-src="${v.url}" data-video-id="${v.id}"><div class="pause-overlay"><div class="pause-icon"><svg viewBox="0 0 24 24"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg></div></div><div class="info"><div class="author">${escapeHtml(v.author)}${v.is_reposted ? `<span class="repost-badge"><img src="https://litter.catbox.moe/f38hn74sf7dz8icn.png"> Вы сделали репост</span>` : ''}</div><div class="description">${escapeHtml(v.description)}</div></div><div class="right-actions"><button class="action-btn" onclick="toggleLike('${v.id}')"><div class="action-icon"><img src="https://litter.catbox.moe/cc6xqtjryvn6oebj.png"></div><span>${v.likes}</span></button><button class="action-btn" onclick="toggleFavorite('${v.id}')"><div class="action-icon"><img src="https://litter.catbox.moe/m21bqybjmge8b4uw.png"></div><span>${v.is_favorite?'★':'☆'}</span></button><button class="action-btn" onclick="toggleRepost('${v.id}')"><div class="action-icon"><img src="https://litter.catbox.moe/ba4xxrmzpqx4mh09.png"></div><span>${v.reposts||0}</span></button><button class="action-btn" onclick="openComments('${v.id}')"><div class="action-icon"><img src="https://litter.catbox.moe/avrc86gvvbg2pgud.png"></div><span>${v.comments?v.comments.length:0}</span></button><button class="action-btn" onclick="shareVideo('${v.id}')"><div class="action-icon">↗️</div><span>Пересл</span></button></div></div>`).join('');
+            setupLazyLoading();
+            setTimeout(()=>{let fc=document.querySelector('.video-card');if(fc&&!fc.querySelector('video')){let vs=fc.dataset.videoSrc;if(vs){let v=document.createElement('video');v.src=vs;v.loop=true;v.playsinline=true;v.preload='auto';v.style.height='100vh';v.style.width='auto';v.style.maxWidth='100vw';v.style.objectFit='contain';let overlay=fc.querySelector('.pause-overlay');v.addEventListener('click',(e)=>{e.stopPropagation();togglePause(v,overlay);});fc.insertBefore(v,fc.firstChild);v.play();currentPlayingVideo=v;if(observer)observer.unobserve(fc);}}},100);
+        }
+        function setupLazyLoading(){
+            if(observer)observer.disconnect();
+            observer=new IntersectionObserver((e)=>{e.forEach(entry=>{let c=entry.target,vid=c.querySelector('video');if(entry.isIntersecting){if(!vid){let src=c.dataset.videoSrc;if(src){vid=document.createElement('video');vid.src=src;vid.loop=true;vid.playsinline=true;vid.preload='auto';vid.style.height='100vh';vid.style.width='auto';vid.style.maxWidth='100vw';vid.style.objectFit='contain';let overlay=c.querySelector('.pause-overlay');vid.addEventListener('click',(e)=>{e.stopPropagation();togglePause(vid,overlay);});c.insertBefore(vid,c.firstChild);vid.play();if(currentPlayingVideo&&currentPlayingVideo!==vid)currentPlayingVideo.pause();currentPlayingVideo=vid;observer.unobserve(c);}}else{vid.play();if(currentPlayingVideo&&currentPlayingVideo!==vid)currentPlayingVideo.pause();currentPlayingVideo=vid;}}else{if(vid){vid.pause();if(currentPlayingVideo===vid)currentPlayingVideo=null;}}})},{threshold:0.5});
+            document.querySelectorAll('.video-card').forEach(c=>observer.observe(c));
+            let f=()=>{document.querySelectorAll('video').forEach(v=>v.muted=false);document.removeEventListener('click',f);document.removeEventListener('touchstart',f);}
+            document.addEventListener('click',f);document.addEventListener('touchstart',f);
+        }
+        window.toggleLike=async function(id){let r=await fetch(`/api/toggle_like/${id}`,{method:'POST'});if((await r.json()).success)await loadFeed();}
+        window.toggleFavorite=async function(id){let r=await fetch(`/api/toggle_favorite/${id}`,{method:'POST'});if((await r.json()).success)await loadFeed();}
+        window.toggleRepost=async function(id){let r=await fetch(`/api/toggle_repost/${id}`,{method:'POST'});let d=await r.json();if(d.success){await loadFeed();showRepostToast();}}
+        window.openComments=async function(id){pauseAllVideos();currentCommentsVideoId=id;let v=allVideos.find(v=>v.id===id),c=v.comments||[],cd=document.getElementById('commentsList');cd.innerHTML=c.length?c.map(c=>`<div class="comment-item"><div class="comment-author">${escapeHtml(c.author)}</div><div class="comment-text">${escapeHtml(c.text)}</div></div>`).join(''):'<div style="text-align:center;padding:40px">💬 Нет комментариев</div>';document.getElementById('commentsModal').classList.add('active');}
+        window.shareVideo=function(id){pauseAllVideos();pendingShareVideoId=id;document.getElementById('shareModalTitle').innerText='Кому переслать?';document.getElementById('shareModal').classList.add('active');loadUsersForShare();}
+        async function sendComment(){let inp=document.getElementById('commentInput'),t=inp.value.trim();if(!t||!currentCommentsVideoId)return;await fetch(`/api/add_comment/${currentCommentsVideoId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,author:currentUser})});inp.value='';await loadFeed();let v=allVideos.find(v=>v.id===currentCommentsVideoId),c=v.comments||[],cd=document.getElementById('commentsList');cd.innerHTML=c.length?c.map(c=>`<div class="comment-item"><div class="comment-author">${escapeHtml(c.author)}</div><div class="comment-text">${escapeHtml(c.text)}</div></div>`).join(''):'<div style="text-align:center;padding:40px">💬 Нет комментариев</div>';}
+        async function loadUsersForShare(){let r=await fetch('/api/users'),u=await r.json(),ud=document.getElementById('usersList');ud.innerHTML=u.length?u.map(u=>`<div class="user-item" onclick="sendSharedVideo('${escapeHtml(u)}')"><div>${escapeHtml(u)}</div><div>📤</div></div>`).join(''):'<div style="padding:20px;text-align:center">Нет пользователей</div>'}
+        window.sendSharedVideo=async function(tu){let r=await fetch('/api/share_video',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_user:tu,video_id:pendingShareVideoId,text:'📹 Поделился видео'})});if((await r.json()).success){alert('Отправлено!');document.getElementById('shareModal').classList.remove('active');loadChats()}}
+        async function loadChats(){let r=await fetch('/api/chats'),c=await r.json(),cd=document.getElementById('chatsList');cd.innerHTML=c.length?c.map(c=>`<div class="chat-item" onclick="openChat('${c.id}','${escapeHtml(c.with_user)}')"><div><div class="chat-name">${escapeHtml(c.with_user)}${c.streak>0?`<span class="streak-badge"><img src="https://litter.catbox.moe/off4i8kbw6ubx0uw.png" class="streak-icon"> ${c.streak}</span>`:''}</div><div class="chat-last">${escapeHtml(c.last_message||'')}</div></div><div>${c.streak>=3?`<img src="https://litter.catbox.moe/off4i8kbw6ubx0uw.png" class="pet-icon">`:'💬'}</div></div>`).join(''):'<div style="padding:20px;text-align:center">Нет чатов</div>'}
+        window.openChat=async function(id,user){pauseAllVideos();currentChatId=id;currentChatUser=user;document.getElementById('chatWithUser').innerText=user;document.getElementById('chatModal').classList.add('active');await loadMessages(id)}
+        async function loadMessages(id){let r=await fetch(`/api/chat/${id}`),m=await r.json(),c=document.getElementById('messagesContainer');c.innerHTML=m.map(m=>`<div class="message ${m.from===currentUser?'from-me':''}"><div class="message-bubble">${m.type==='video'?`📹 ${escapeHtml(m.text)}<div class="shared-video"><video src="${m.video_url}" controls preload="metadata"></video><div style="font-size:11px">${escapeHtml(m.video_author)}: ${escapeHtml(m.video_description)}</div></div>`:`<div>${escapeHtml(m.text)}</div>`}</div><div class="message-time">${m.time}</div></div>`).join('');c.scrollTop=c.scrollHeight}
+        async function sendMessage(){let inp=document.getElementById('messageInput'),t=inp.value.trim();if(!t||!currentChatUser)return;let r=await fetch('/api/send_message',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_user:currentChatUser,text:t,chat_id:currentChatId})}),d=await r.json();if(d.success){inp.value='';currentChatId=d.chat_id;await loadMessages(currentChatId);await loadChats();if(d.streak)showStreakToast(d.streak)}}
+        function setupEventListeners(){
+            document.getElementById('uploadToggle').onclick=()=>{let ub=document.getElementById('uploadBar');ub.classList.toggle('active');document.getElementById('uploadToggle').textContent=ub.classList.contains('active')?'✕':'📤'};
+            document.getElementById('uploadBtn').onclick=async()=>{let f=document.getElementById('videoFile').files[0];if(!f)return alert('Выбери видео');let fd=new FormData();fd.append('video',f);fd.append('author',document.getElementById('author').value);fd.append('description',document.getElementById('desc').value);let r=await fetch('/api/upload',{method:'POST',body:fd});if((await r.json()).success){alert('Загружено!');location.reload()}};
+            document.getElementById('chatsBtn').onclick=()=>{pauseAllVideos();document.getElementById('chatsModal').classList.add('active');loadChats()};
+            document.getElementById('closeChats').onclick=()=>document.getElementById('chatsModal').classList.remove('active');
+            document.getElementById('newChatBtn').onclick=async()=>{pauseAllVideos();document.getElementById('shareModalTitle').innerText='Выберите пользователя';document.getElementById('shareModal').classList.add('active');let r=await fetch('/api/users'),u=await r.json();document.getElementById('usersList').innerHTML=u.map(u=>`<div class="user-item" onclick="openChatWithUser('${escapeHtml(u)}')"><div>${escapeHtml(u)}</div><div>💬</div></div>`).join('')};
+            window.openChatWithUser=async(u)=>{document.getElementById('shareModal').classList.remove('active');currentChatUser=u;currentChatId=null;document.getElementById('chatWithUser').innerText=u;document.getElementById('chatModal').classList.add('active');document.getElementById('messagesContainer').innerHTML=''};
+            document.getElementById('closeShare').onclick=()=>{document.getElementById('shareModal').classList.remove('active');pendingShareVideoId=null};
+            document.getElementById('closeChat').onclick=()=>{document.getElementById('chatModal').classList.remove('active');currentChatId=null;currentChatUser=null};
+            document.getElementById('sendMessageBtn').onclick=sendMessage;
+            document.getElementById('messageInput').onkeypress=e=>{if(e.key==='Enter')sendMessage()};
+            document.getElementById('closeComments').onclick=()=>{document.getElementById('commentsModal').classList.remove('active');currentCommentsVideoId=null;document.getElementById('commentInput').value=''};
+            document.getElementById('sendCommentBtn').onclick=sendComment;
+            document.getElementById('commentInput').onkeypress=e=>{if(e.key==='Enter')sendComment()};
+            document.getElementById('profileBtn').onclick=()=>{pauseAllVideos();document.getElementById('profileModal').classList.add('active');loadProfileTab('all')};
+            document.getElementById('closeProfileModal').onclick=()=>document.getElementById('profileModal').classList.remove('active');
+            document.querySelectorAll('.tab').forEach(t=>{t.onclick=()=>{document.querySelectorAll('.tab').forEach(tt=>tt.classList.remove('active'));t.classList.add('active');loadProfileTab(t.dataset.tab)}});
+        }
+        async function loadProfileTab(type){let mc=document.getElementById('modalContent'),url=type==='liked'?'/api/user_videos/liked':type==='favorite'?'/api/user_videos/favorite':'/api/videos',r=await fetch(url),v=await r.json();if(type==='all')v=v.filter(v=>v.author===currentUser);if(!v.length){mc.innerHTML='<div style="text-align:center;padding:40px">😢 Нет видео</div>';return}mc.innerHTML=v.map(v=>`<div class="profile-video"><video src="${v.url}" muted loop preload="metadata"></video></div>`).join('');document.querySelectorAll('.profile-video video').forEach(v=>{v.play();v.onmouseenter=()=>v.play();v.onmouseleave=()=>v.pause()})}
+        function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>m==='&'?'&amp;':m==='<'?'&lt;':'&gt;')}
+        init();
+    </script>
+</body>
+</html>

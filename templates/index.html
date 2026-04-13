@@ -64,6 +64,8 @@
         @keyframes slideDown{from{opacity:0;transform:translateX(-50%) translateY(-20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
         @keyframes slideUp{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
         .toast-icon{width:18px;height:18px;border-radius:50%}
+        .floating-heart{position:fixed;pointer-events:none;z-index:999;font-size:40px;animation:floatUp 1s ease-out forwards}
+        @keyframes floatUp{0%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:0;transform:translateY(-100px) scale(1.5)}}
         
         @media (max-width: 768px) {
             .right-actions { gap: 12px; bottom: 20px; right: 8px; }
@@ -122,11 +124,28 @@
             socket=io();
             socket.on('connect',()=>socket.emit('join',{username:currentUser}));
             socket.on('new_message',(data)=>{if(currentChatId===data.chat_id)loadMessages(currentChatId);loadChats();if(data.streak)showStreakToast(data.streak)});
-            socket.on('new_comment',()=>loadFeed());
+            socket.on('new_comment',(data)=>{
+                if(currentCommentsVideoId===data.video_id){
+                    let cd=document.getElementById('commentsList');
+                    let nc='<div class="comment-item"><div class="comment-author">'+escapeHtml(data.comment.author)+'</div><div class="comment-text">'+escapeHtml(data.comment.text)+'</div></div>';
+                    if(cd.innerHTML.includes('Нет комментариев')) cd.innerHTML=nc;
+                    else cd.innerHTML+=nc;
+                }
+                loadFeed();
+            });
             socket.on('streak_update',(data)=>{loadChats();if(currentChatUser===data.with_user)showStreakToast(data.streak)});
             socket.on('new_repost',(data)=>{updateRepostCount(data.video_id,data.reposts)});
             socket.on('like_update',(data)=>{updateLikeCount(data.video_id,data.likes)});
             socket.on('favorite_update',(data)=>{updateFavoriteState(data.video_id,data.is_favorite)});
+        }
+        function createFloatingHeart(x,y){
+            let heart=document.createElement('div');
+            heart.className='floating-heart';
+            heart.innerHTML='❤️';
+            heart.style.left=x-20+'px';
+            heart.style.top=y-20+'px';
+            document.body.appendChild(heart);
+            setTimeout(()=>heart.remove(),1000);
         }
         function updateLikeCount(videoId,likes){let span=document.querySelector(`.video-card[data-video-id="${videoId}"] .right-actions button:first-child span`);if(span)span.innerText=likes;}
         function updateRepostCount(videoId,reposts){let span=document.querySelector(`.video-card[data-video-id="${videoId}"] .right-actions button:nth-child(3) span`);if(span)span.innerText=reposts;}
@@ -138,12 +157,12 @@
         function togglePause(video,overlay){
             if(video.paused){
                 video.play();
-                overlay.classList.remove('show');
+                if(overlay) overlay.classList.remove('show');
             }else{
                 video.pause();
-                overlay.classList.add('show');
+                if(overlay) overlay.classList.add('show');
                 if(pauseTimeout) clearTimeout(pauseTimeout);
-                pauseTimeout=setTimeout(()=>overlay.classList.remove('show'),800);
+                pauseTimeout=setTimeout(()=>{if(overlay) overlay.classList.remove('show');},800);
             }
         }
         function syncVideoPlayback(){
@@ -205,6 +224,21 @@
                             vid.style.objectFit='contain';
                             let overlay=card.querySelector('.pause-overlay');
                             vid.addEventListener('click',(e)=>{e.stopPropagation();togglePause(vid,overlay);});
+                            let lastTap=0;
+                            vid.addEventListener('touchend', (e) => {
+                                const currentTime = new Date().getTime();
+                                const tapLength = currentTime - lastTap;
+                                if (tapLength < 500 && tapLength > 0) {
+                                    e.preventDefault();
+                                    const likeBtn = card.querySelector('.right-actions button:first-child');
+                                    if(likeBtn){
+                                        likeBtn.click();
+                                        const rect = e.changedTouches[0];
+                                        createFloatingHeart(rect.clientX, rect.clientY);
+                                    }
+                                }
+                                lastTap = currentTime;
+                            });
                             card.insertBefore(vid,card.firstChild);
                         }
                     }

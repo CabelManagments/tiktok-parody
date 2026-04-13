@@ -2,18 +2,22 @@ import os, json, uuid
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, send_from_directory, url_for, session
 from flask_socketio import SocketIO, emit, join_room
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'supersecretkey123'
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
+app.config['AVATAR_FOLDER'] = 'static/avatars'
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 ALLOWED_EXTENSIONS = {'mp4', 'mov', 'avi', 'mkv', 'webm'}
+ALLOWED_IMAGES = {'png', 'jpg', 'jpeg', 'gif'}
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+os.makedirs(app.config['AVATAR_FOLDER'], exist_ok=True)
 DB_FILE = 'data.json'
 
-def allowed_file(f): return '.' in f and f.rsplit('.',1)[1].lower() in ALLOWED_EXTENSIONS
+def allowed_file(f, allowed): return '.' in f and f.rsplit('.',1)[1].lower() in allowed
 
 def load_data():
     if not os.path.exists(DB_FILE): return {"videos": [], "users": {}, "chats": {}, "streaks": {}}
@@ -29,6 +33,12 @@ def load_data():
             for u in d['users']:
                 if 'reposted_videos' not in d['users'][u]:
                     d['users'][u]['reposted_videos'] = []
+                if 'avatar' not in d['users'][u]:
+                    d['users'][u]['avatar'] = 'default.png'
+                if 'followers' not in d['users'][u]:
+                    d['users'][u]['followers'] = []
+                if 'following' not in d['users'][u]:
+                    d['users'][u]['following'] = []
             return d
     except: return {"videos": [], "users": {}, "chats": {}, "streaks": {}}
 
@@ -67,19 +77,104 @@ def login():
     username = request.json.get('username', 'Аноним').strip() or 'Аноним'
     data = load_data()
     if username not in data['users']:
-        data['users'][username] = {'liked_videos': [], 'favorite_videos': [], 'reposted_videos': []}
+        data['users'][username] = {
+            'liked_videos': [], 
+            'favorite_videos': [], 
+            'reposted_videos': [],
+            'avatar': 'default.png',
+            'followers': [],
+            'following': []
+        }
         save_data(data)
     session['username'] = username
     return jsonify({'success': True, 'username': username})
 
 @app.route('/api/me', methods=['GET'])
-def me(): return jsonify({'username': session.get('username')})
+def me(): 
+    data = load_data()
+    cur = session.get('username')
+    if cur and cur in data['users']:
+        return jsonify({
+            'username': cur,
+            'avatar': data['users'][cur].get('avatar', 'default.png'),
+            'followers': len(data['users'][cur].get('followers', [])),
+            'following': len(data['users'][cur].get('following', []))
+        })
+    return jsonify({'username': cur})
+
+@app.route('/api/user/<username>', methods=['GET'])
+def get_user(username):
+    data = load_data()
+    cur = session.get('username')
+    user = data['users'].get(username)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    is_following = cur in user.get('followers', []) if cur else False
+    return jsonify({
+        'username': username,
+        'avatar': user.get('avatar', 'default.png'),
+        'followers': len(user.get('followers', [])),
+        'following': len(user.get('following', [])),
+        'is_following': is_following
+    })
+
+@app.route('/api/toggle_follow/<username>', methods=['POST'])
+def toggle_follow(username):
+    cur = session.get('username')
+    if not cur or cur == username:
+        return jsonify({'error': 'Invalid'}), 400
+    data = load_data()
+    if cur not in data['users']:
+        data['users'][cur] = {'liked_videos': [], 'favorite_videos': [], 'reposted_videos': [], 'avatar': 'default.png', 'followers': [], 'following': []}
+    if username not in data['users']:
+        data['users'][username] = {'liked_videos': [], 'favorite_videos': [], 'reposted_videos': [], 'avatar': 'default.png', 'followers': [], 'following': []}
+    
+    if cur in data['users'][username].get('followers', []):
+        data['users'][username]['followers'].remove(cur)
+        data['users'][cur]['following'].remove(username)
+        is_follow = False
+    else:
+        data['users'][username].setdefault('followers', []).append(cur)
+        data['users'][cur].setdefault('following', []).append(username)
+        is_follow = True
+    save_data(data)
+    return jsonify({'success': True, 'is_follow': is_follow, 'followers': len(data['users'][username]['followers'])})
+
+@app.route('/api/update_profile', methods=['POST'])
+def update_profile():
+    cur = session.get('username')
+    if not cur:
+        return jsonify({'error': 'No auth'}), 401
+    data = load_data()
+    
+    if 'avatar' in request.files:
+        avatar = request.files['avatar']
+        if avatar.filename and allowed_file(avatar.filename, ALLOWED_IMAGES):
+            ext = avatar.filename.rsplit('.',1)[1].lower()
+            new_fn = f"{cur}_{uuid.uuid4().hex}.{ext}"
+            avatar.save(os.path.join(app.config['AVATAR_FOLDER'], new_fn))
+            data['users'][cur]['avatar'] = new_fn
+    
+    if 'new_username' in request.form:
+        new_username = request.form['new_username'].strip()
+        if new_username and new_username != cur and new_username not in data['users']:
+            # Сложная логика переименования (пока пропускаем)
+            pass
+    
+    save_data(data)
+    return jsonify({'success': True})
 
 @app.route('/api/videos', methods=['GET'])
 def get_videos():
     data = load_data()
     videos = data.get('videos', [])
     cur = session.get('username')
+    feed_type = request.args.get('feed', 'all')
+    
+    if feed_type == 'subscriptions' and cur:
+        following = data['users'].get(cur, {}).get('following', [])
+        videos = [v for v in videos if v['author'] in following]
+    
     for v in videos:
         v['url'] = url_for('uploaded_file', filename=v['filename'])
         if 'comments' not in v: v['comments'] = []
@@ -185,7 +280,7 @@ def upload():
     if 'video' not in request.files: return jsonify({'error': 'No file'}), 400
     f = request.files['video']
     if f.filename == '': return jsonify({'error': 'Empty'}), 400
-    if not allowed_file(f.filename): return jsonify({'error': 'Format not allowed'}), 400
+    if not allowed_file(f.filename, ALLOWED_EXTENSIONS): return jsonify({'error': 'Format not allowed'}), 400
     ext = f.filename.rsplit('.',1)[1].lower()
     new_fn = f"{uuid.uuid4().hex}.{ext}"
     f.save(os.path.join(app.config['UPLOAD_FOLDER'], new_fn))
@@ -193,7 +288,7 @@ def upload():
     video = {'id': uuid.uuid4().hex, 'filename': new_fn, 'likes': 0, 'liked_by': [],
              'favorited_by': [], 'reposts': 0, 'reposted_by': [], 'comments': [], 
              'description': request.form.get('description', ''),
-             'author': request.form.get('author', 'Аноним'), 'created_at': uuid.uuid4().hex}
+             'author': session.get('username', 'Аноним'), 'created_at': uuid.uuid4().hex}
     data['videos'].insert(0, video)
     save_data(data)
     return jsonify({'success': True, 'video': video})
@@ -206,7 +301,7 @@ def toggle_repost(video_id):
     v = next((x for x in data['videos'] if x['id'] == video_id), None)
     if not v: return jsonify({'error': 'Not found'}), 404
     if cur not in data['users']: 
-        data['users'][cur] = {'liked_videos': [], 'favorite_videos': [], 'reposted_videos': []}
+        data['users'][cur] = {'liked_videos': [], 'favorite_videos': [], 'reposted_videos': [], 'avatar': 'default.png', 'followers': [], 'following': []}
     u = data['users'][cur]
     if video_id in u.get('reposted_videos', []):
         u['reposted_videos'].remove(video_id)
@@ -244,7 +339,8 @@ def toggle_like(video_id):
     data = load_data()
     v = next((x for x in data['videos'] if x['id'] == video_id), None)
     if not v: return jsonify({'error': 'Not found'}), 404
-    if cur not in data['users']: data['users'][cur] = {'liked_videos': [], 'favorite_videos': [], 'reposted_videos': []}
+    if cur not in data['users']: 
+        data['users'][cur] = {'liked_videos': [], 'favorite_videos': [], 'reposted_videos': [], 'avatar': 'default.png', 'followers': [], 'following': []}
     u = data['users'][cur]
     if video_id in u.get('liked_videos', []):
         u['liked_videos'].remove(video_id); v['likes'] = max(0, v['likes'] - 1)
@@ -253,6 +349,7 @@ def toggle_like(video_id):
         u['liked_videos'].append(video_id); v['likes'] = v.get('likes', 0) + 1
         liked = True
     save_data(data)
+    socketio.emit('like_update', {'video_id': video_id, 'likes': v['likes']})
     return jsonify({'success': True, 'likes': v['likes'], 'is_liked': liked})
 
 @app.route('/api/toggle_favorite/<video_id>', methods=['POST'])
@@ -262,7 +359,8 @@ def toggle_favorite(video_id):
     data = load_data()
     v = next((x for x in data['videos'] if x['id'] == video_id), None)
     if not v: return jsonify({'error': 'Not found'}), 404
-    if cur not in data['users']: data['users'][cur] = {'liked_videos': [], 'favorite_videos': [], 'reposted_videos': []}
+    if cur not in data['users']: 
+        data['users'][cur] = {'liked_videos': [], 'favorite_videos': [], 'reposted_videos': [], 'avatar': 'default.png', 'followers': [], 'following': []}
     u = data['users'][cur]
     if video_id in u.get('favorite_videos', []):
         u['favorite_videos'].remove(video_id)
@@ -271,6 +369,7 @@ def toggle_favorite(video_id):
         u['favorite_videos'].append(video_id)
         fav = True
     save_data(data)
+    socketio.emit('favorite_update', {'video_id': video_id, 'is_favorite': fav})
     return jsonify({'success': True, 'is_favorite': fav})
 
 @app.route('/api/user_videos/<action>', methods=['GET'])
@@ -288,6 +387,10 @@ def user_videos(action):
 @app.route('/static/uploads/<filename>')
 def uploaded_file(filename): 
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+@app.route('/static/avatars/<filename>')
+def avatar_file(filename): 
+    return send_from_directory(app.config['AVATAR_FOLDER'], filename)
 
 @socketio.on('join')
 def on_join(data):

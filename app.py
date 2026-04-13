@@ -253,7 +253,6 @@ def toggle_like(video_id):
         u['liked_videos'].append(video_id); v['likes'] = v.get('likes', 0) + 1
         liked = True
     save_data(data)
-    socketio.emit('like_update', {'video_id': video_id, 'likes': v['likes']})
     return jsonify({'success': True, 'likes': v['likes'], 'is_liked': liked})
 
 @app.route('/api/toggle_favorite/<video_id>', methods=['POST'])
@@ -272,7 +271,6 @@ def toggle_favorite(video_id):
         u['favorite_videos'].append(video_id)
         fav = True
     save_data(data)
-    socketio.emit('favorite_update', {'video_id': video_id, 'is_favorite': fav})
     return jsonify({'success': True, 'is_favorite': fav})
 
 @app.route('/api/user_videos/<action>', methods=['GET'])

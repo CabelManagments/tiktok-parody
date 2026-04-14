@@ -8,9 +8,9 @@
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{font-family:system-ui,sans-serif;background:#000;color:#fff;overflow:hidden;height:100vh}
-        .feed{height:calc(100vh - 60px);overflow-y:scroll;scroll-snap-type:y mandatory;margin-bottom:60px}
-        .video-card{scroll-snap-align:start;height:calc(100vh - 60px);position:relative;background:#000;display:flex;align-items:center;justify-content:center}
-        video{height:calc(100vh - 60px);width:auto;max-width:100vw;object-fit:contain}
+        .feed{height:100vh;overflow-y:scroll;scroll-snap-type:y mandatory}
+        .video-card{scroll-snap-align:start;height:100vh;position:relative;background:#000;display:flex;align-items:center;justify-content:center}
+        video{height:100vh;width:auto;max-width:100vw;object-fit:contain}
         .info{position:absolute;bottom:20px;left:16px;right:80px;z-index:10}
         .author{font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
         .hashtag{color:#fe2c55;cursor:pointer;margin-right:6px;display:inline-block}
@@ -27,17 +27,16 @@
         .pause-overlay.show{opacity:1}
         .pause-icon{width:70px;height:70px;background:rgba(255,255,255,0.2);border-radius:50%;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(10px)}
         .pause-icon svg{width:40px;height:40px;fill:#fff}
-        .bottom-nav{position:fixed;bottom:0;left:0;right:0;background:#111;display:flex;justify-content:space-around;padding:10px 0;z-index:100;border-top:0.5px solid #333}
-        .nav-btn{background:none;border:none;color:#888;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px}
-        .nav-btn.active{color:#fe2c55}
-        .header{position:fixed;top:0;left:0;right:0;z-index:100;padding:50px 16px 20px;display:flex;justify-content:space-between;background:linear-gradient(to bottom,rgba(0,0,0,0.5),transparent)}
-        .header-btn{background:rgba(0,0,0,0.6);backdrop-filter:blur(10px);border:none;color:#fff;padding:6px 16px;border-radius:30px;cursor:pointer}
+        .top-nav{position:fixed;top:0;left:0;right:0;background:linear-gradient(to bottom,rgba(0,0,0,0.8),transparent);display:flex;justify-content:space-around;padding:50px 16px 15px;z-index:100;gap:10px;flex-wrap:wrap}
+        .nav-btn{background:rgba(0,0,0,0.6);backdrop-filter:blur(10px);border:none;color:#fff;padding:6px 16px;border-radius:30px;cursor:pointer;font-size:13px}
+        .nav-btn.active{background:#fe2c55}
         .search-bar{display:flex;gap:8px;padding:10px;background:#1a1a1a;margin:10px;border-radius:30px}
         .search-input{flex:1;background:transparent;border:none;color:#fff;padding:8px;outline:none}
         .search-btn{background:#fe2c55;border:none;padding:8px 16px;border-radius:25px;color:#fff;cursor:pointer}
         .modal,.chats-modal,.share-modal,.comments-modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:#000;z-index:200;overflow-y:auto}
         .modal.active,.chats-modal.active,.share-modal.active,.comments-modal.active{display:block}
         .modal-header{position:sticky;top:0;background:#000;padding:20px;display:flex;justify-content:space-between;border-bottom:1px solid #333}
+        .modal-header button{background:none;border:none;color:#fff;font-size:24px;cursor:pointer}
         .chat-item,.user-item{padding:15px;border-bottom:0.5px solid #333;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
         .chat-name{font-weight:700}
         .chat-last{font-size:12px;opacity:0.7}
@@ -56,20 +55,20 @@
         .send-btn{background:#fe2c55;border:none;padding:10px 20px;border-radius:25px;color:#fff;cursor:pointer}
         .comment-item{padding:12px 15px;border-bottom:0.5px solid #333}
         .comment-author{font-weight:700;font-size:14px}
-        .upload-bar{position:fixed;bottom:60px;left:0;right:0;background:rgba(20,20,25,0.95);backdrop-filter:blur(20px);padding:10px 12px;display:flex;gap:8px;z-index:100;transform:translateY(100%);transition:0.3s}
+        .upload-bar{position:fixed;bottom:0;left:0;right:0;background:rgba(20,20,25,0.95);backdrop-filter:blur(20px);padding:10px 12px;display:flex;gap:8px;z-index:100;transform:translateY(100%);transition:0.3s}
         .upload-bar.active{transform:translateY(0)}
-        .upload-toggle{position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#fe2c55;border:none;color:#fff;padding:8px 20px;border-radius:30px;z-index:101;cursor:pointer}
+        .upload-toggle{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);background:#fe2c55;border:none;color:#fff;padding:8px 20px;border-radius:30px;z-index:101;cursor:pointer}
         .upload-bar input,.upload-bar button{background:#2a2a2e;border:none;padding:8px 12px;border-radius:25px;color:#fff}
         .upload-bar button{background:#fe2c55;cursor:pointer}
         .profile-video{width:calc(33.33% - 6px);margin:3px;aspect-ratio:9/16;background:#111;border-radius:8px;overflow:hidden}
         .profile-video video{width:100%;height:100%;object-fit:cover}
-        .modal-tabs{display:flex;gap:20px;padding:15px 20px;border-bottom:1px solid #333}
-        .tab{background:none;border:none;color:#888;padding:8px 0;cursor:pointer}
+        .modal-tabs{display:flex;gap:20px;padding:15px 20px;border-bottom:1px solid #333;flex-wrap:wrap}
+        .tab{background:none;border:none;color:#888;padding:8px 0;cursor:pointer;font-size:14px}
         .tab.active{color:#fe2c55;border-bottom:2px solid #fe2c55}
         .empty-state{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center}
         .feed::-webkit-scrollbar{display:none}
         .streak-toast{position:fixed;top:80px;left:50%;transform:translateX(-50%);background:#fe2c55;padding:8px 20px;border-radius:30px;z-index:300;animation:slideDown 0.3s;display:flex;align-items:center;gap:8px}
-        .repost-toast{position:fixed;bottom:120px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);backdrop-filter:blur(20px);padding:12px 20px;border-radius:40px;z-index:300;display:flex;align-items:center;gap:12px;animation:slideUp 0.3s}
+        .repost-toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);backdrop-filter:blur(20px);padding:12px 20px;border-radius:40px;z-index:300;display:flex;align-items:center;gap:12px;animation:slideUp 0.3s}
         @keyframes slideDown{from{opacity:0;transform:translateX(-50%) translateY(-20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
         @keyframes slideUp{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
         .toast-icon{width:18px;height:18px;border-radius:50%}
@@ -83,18 +82,22 @@
             .info{bottom:15px;left:12px;right:70px}
             .author{font-size:13px}
             .description{font-size:11px}
-            .upload-toggle{bottom:70px;padding:8px 16px;font-size:12px}
+            .upload-toggle{bottom:10px;padding:8px 16px;font-size:12px}
             .upload-bar{flex-direction:column;gap:6px;padding:8px 12px}
             .upload-bar input,.upload-bar button{width:100%;font-size:14px;padding:10px}
-            .upload-bar.active{padding-bottom:70px}
-            .header{padding:40px 12px 15px}
-            .header-btn{padding:4px 12px;font-size:12px}
+            .top-nav{padding:45px 12px 10px;gap:6px}
+            .nav-btn{padding:4px 12px;font-size:11px}
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <button class="header-btn" id="profileBtn">👤 Профиль</button>
+    <div class="top-nav">
+        <button class="nav-btn active" data-feed="all">🏠 Для тебя</button>
+        <button class="nav-btn" data-feed="recommendations">🎯 Рекоменд</button>
+        <button class="nav-btn" id="historyBtn">📜 История</button>
+        <button class="nav-btn" id="searchBtn">🔍 Поиск</button>
+        <button class="nav-btn" id="chatsBtnNav">💬 Чаты</button>
+        <button class="nav-btn" id="profileBtnNav">👤 Профиль</button>
     </div>
     <div class="feed" id="feed"><div class="empty-state" id="emptyState"><div style="font-size:60px">🎬</div><div>Нет видео</div></div></div>
     <button class="upload-toggle" id="uploadToggle">📤 Загрузить</button>
@@ -104,19 +107,12 @@
         <input type="file" id="videoFile" accept="video/*">
         <button id="uploadBtn">✅</button>
     </div>
-    <div class="bottom-nav">
-        <button class="nav-btn active" data-feed="all">🏠 Для тебя</button>
-        <button class="nav-btn" data-feed="recommendations">🎯 Рекоменд</button>
-        <button class="nav-btn" id="historyBtn">📜 История</button>
-        <button class="nav-btn" id="searchBtn">🔍 Поиск</button>
-        <button class="nav-btn" id="chatsBtnNav">💬 Чаты</button>
-    </div>
-    <div class="chats-modal" id="chatsModal"><div class="modal-header"><h3>💬 Чаты</h3><button id="closeChats" style="background:none;border:none;color:#fff;font-size:24px">✕</button></div><div id="chatsList"></div><div style="padding:15px"><button id="newChatBtn" style="background:#fe2c55;border:none;padding:12px;border-radius:30px;color:#fff;width:100%">➕ Новый чат</button></div></div>
-    <div class="share-modal" id="shareModal"><div class="modal-header"><h3 id="shareModalTitle">Выберите пользователя</h3><button id="closeShare" style="background:none;border:none;color:#fff;font-size:24px">✕</button></div><div id="usersList"></div></div>
-    <div class="modal" id="chatModal"><div class="modal-header"><h3 id="chatWithUser">Чат</h3><button id="closeChat" style="background:none;border:none;color:#fff;font-size:24px">✕</button></div><div class="messages-container" id="messagesContainer"></div><div class="message-input-area"><input type="text" class="message-input" id="messageInput" placeholder="Сообщение..."><button class="send-btn" id="sendMessageBtn">Отпр</button></div></div>
-    <div class="comments-modal" id="commentsModal"><div class="modal-header"><h3>💬 Комментарии</h3><button id="closeComments" style="background:none;border:none;color:#fff;font-size:24px">✕</button></div><div id="commentsList" style="padding-bottom:80px"></div><div class="comment-input-area"><input type="text" class="comment-input" id="commentInput" placeholder="Комментарий..."><button class="send-btn" id="sendCommentBtn">Отпр</button></div></div>
-    <div class="modal" id="profileModal"><div class="modal-header"><h3 id="profileUsername">Профиль</h3><button id="closeProfileModal" style="background:none;border:none;color:#fff;font-size:24px">✕</button></div><div class="modal-tabs"><button class="tab active" data-tab="all">Все видео</button><button class="tab" data-tab="liked">Лайки</button><button class="tab" data-tab="favorite">Избранное</button><button class="tab" data-tab="history">История</button></div><div class="modal-content" id="modalContent" style="padding:20px;display:flex;flex-wrap:wrap"></div></div>
-    <div class="modal" id="searchModal"><div class="modal-header"><h3>🔍 Поиск по хэштегам</h3><button id="closeSearch" style="background:none;border:none;color:#fff;font-size:24px">✕</button></div><div class="search-bar"><input type="text" id="searchInput" class="search-input" placeholder="#хэштег"><button id="doSearch" class="search-btn">Найти</button></div><div id="trendingHashtags" style="padding:15px"></div><div id="searchResults" style="padding:15px;display:flex;flex-wrap:wrap"></div></div>
+    <div class="chats-modal" id="chatsModal"><div class="modal-header"><h3>💬 Чаты</h3><button id="closeChats">✕</button></div><div id="chatsList"></div><div style="padding:15px"><button id="newChatBtn" style="background:#fe2c55;border:none;padding:12px;border-radius:30px;color:#fff;width:100%">➕ Новый чат</button></div></div>
+    <div class="share-modal" id="shareModal"><div class="modal-header"><h3 id="shareModalTitle">Выберите пользователя</h3><button id="closeShare">✕</button></div><div id="usersList"></div></div>
+    <div class="modal" id="chatModal"><div class="modal-header"><h3 id="chatWithUser">Чат</h3><button id="closeChat">✕</button></div><div class="messages-container" id="messagesContainer"></div><div class="message-input-area"><input type="text" class="message-input" id="messageInput" placeholder="Сообщение..."><button class="send-btn" id="sendMessageBtn">Отпр</button></div></div>
+    <div class="comments-modal" id="commentsModal"><div class="modal-header"><h3>💬 Комментарии</h3><button id="closeComments">✕</button></div><div id="commentsList" style="padding-bottom:80px"></div><div class="comment-input-area"><input type="text" class="comment-input" id="commentInput" placeholder="Комментарий..."><button class="send-btn" id="sendCommentBtn">Отпр</button></div></div>
+    <div class="modal" id="profileModal"><div class="modal-header"><h3 id="profileUsername">Профиль</h3><button id="closeProfileModal">✕</button></div><div class="modal-tabs"><button class="tab active" data-tab="all">Все видео</button><button class="tab" data-tab="liked">Лайки</button><button class="tab" data-tab="favorite">Избранное</button><button class="tab" data-tab="history">История</button></div><div class="modal-content" id="modalContent" style="padding:20px;display:flex;flex-wrap:wrap"></div></div>
+    <div class="modal" id="searchModal"><div class="modal-header"><h3>🔍 Поиск по хэштегам</h3><button id="closeSearch">✕</button></div><div class="search-bar"><input type="text" id="searchInput" class="search-input" placeholder="#хэштег"><button id="doSearch" class="search-btn">Найти</button></div><div id="trendingHashtags" style="padding:15px"></div><div id="searchResults" style="padding:15px;display:flex;flex-wrap:wrap"></div></div>
     <div id="streakToast" class="streak-toast" style="display:none"></div>
     <div id="repostToast" class="repost-toast" style="display:none"></div>
     <script>
@@ -217,7 +213,7 @@
                             vid.loop=true;
                             vid.playsinline=true;
                             vid.preload='auto';
-                            vid.style.height='calc(100vh - 60px)';
+                            vid.style.height='100vh';
                             vid.style.width='auto';
                             vid.style.maxWidth='100vw';
                             vid.style.objectFit='contain';
@@ -296,25 +292,28 @@
         function setupEventListeners(){
             document.getElementById('uploadToggle').onclick=()=>{let ub=document.getElementById('uploadBar');ub.classList.toggle('active');document.getElementById('uploadToggle').textContent=ub.classList.contains('active')?'✕':'📤'};
             document.getElementById('uploadBtn').onclick=async()=>{let f=document.getElementById('videoFile').files[0];if(!f)return alert('Выбери видео');let fd=new FormData();fd.append('video',f);fd.append('author',document.getElementById('author').value);fd.append('description',document.getElementById('desc').value);let r=await fetch('/api/upload',{method:'POST',body:fd});if((await r.json()).success){alert('Загружено!');location.reload()}};
-            document.querySelectorAll('.nav-btn').forEach(btn=>{btn.onclick=()=>{if(btn.id==='chatsBtnNav'){pauseAllVideos();document.getElementById('chatsModal').classList.add('active');loadChats();return;}
-            if(btn.id==='historyBtn'){currentFeed='all';currentHashtag='';loadFeed();document.getElementById('profileModal').classList.add('active');document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelector('[data-tab="history"]').classList.add('active');loadProfileTab('history');return;}
-            if(btn.id==='searchBtn'){document.getElementById('searchModal').classList.add('active');loadTrendingHashtags();return;}
-            currentFeed=btn.dataset.feed;currentHashtag='';loadFeed();};});
-            document.getElementById('chatsBtn').onclick=()=>{pauseAllVideos();document.getElementById('chatsModal').classList.add('active');loadChats()};
+            document.querySelectorAll('.nav-btn').forEach(btn=>{
+                btn.onclick=()=>{
+                    if(btn.id==='chatsBtnNav'){pauseAllVideos();document.getElementById('chatsModal').classList.add('active');loadChats();return;}
+                    if(btn.id==='profileBtnNav'){pauseAllVideos();document.getElementById('profileModal').classList.add('active');loadProfileTab('all');return;}
+                    if(btn.id==='historyBtn'){pauseAllVideos();document.getElementById('profileModal').classList.add('active');document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelector('[data-tab="history"]').classList.add('active');loadProfileTab('history');return;}
+                    if(btn.id==='searchBtn'){document.getElementById('searchModal').classList.add('active');loadTrendingHashtags();return;}
+                    currentFeed=btn.dataset.feed;currentHashtag='';loadFeed();
+                };
+            });
             document.getElementById('closeChats').onclick=()=>document.getElementById('chatsModal').classList.remove('active');
+            document.getElementById('closeProfileModal').onclick=()=>document.getElementById('profileModal').classList.remove('active');
+            document.getElementById('closeSearch').onclick=()=>document.getElementById('searchModal').classList.remove('active');
+            document.getElementById('closeShare').onclick=()=>document.getElementById('shareModal').classList.remove('active');
+            document.getElementById('closeChat').onclick=()=>document.getElementById('chatModal').classList.remove('active');
+            document.getElementById('closeComments').onclick=()=>document.getElementById('commentsModal').classList.remove('active');
             document.getElementById('newChatBtn').onclick=async()=>{pauseAllVideos();document.getElementById('shareModalTitle').innerText='Выберите пользователя';document.getElementById('shareModal').classList.add('active');let r=await fetch('/api/users'),u=await r.json();document.getElementById('usersList').innerHTML=u.map(u=>`<div class="user-item" onclick="openChatWithUser('${escapeHtml(u)}')"><div>${escapeHtml(u)}</div><div>💬</div></div>`).join('')};
             window.openChatWithUser=async(u)=>{document.getElementById('shareModal').classList.remove('active');currentChatUser=u;currentChatId=null;document.getElementById('chatWithUser').innerText=u;document.getElementById('chatModal').classList.add('active');document.getElementById('messagesContainer').innerHTML=''};
-            document.getElementById('closeShare').onclick=()=>{document.getElementById('shareModal').classList.remove('active');pendingShareVideoId=null};
-            document.getElementById('closeChat').onclick=()=>{document.getElementById('chatModal').classList.remove('active');currentChatId=null;currentChatUser=null};
             document.getElementById('sendMessageBtn').onclick=sendMessage;
             document.getElementById('messageInput').onkeypress=e=>{if(e.key==='Enter')sendMessage()};
-            document.getElementById('closeComments').onclick=()=>{document.getElementById('commentsModal').classList.remove('active');currentCommentsVideoId=null;document.getElementById('commentInput').value=''};
             document.getElementById('sendCommentBtn').onclick=sendComment;
             document.getElementById('commentInput').onkeypress=e=>{if(e.key==='Enter')sendComment()};
-            document.getElementById('profileBtn').onclick=()=>{pauseAllVideos();document.getElementById('profileModal').classList.add('active');loadProfileTab('all')};
-            document.getElementById('closeProfileModal').onclick=()=>document.getElementById('profileModal').classList.remove('active');
             document.querySelectorAll('.tab').forEach(t=>{t.onclick=()=>{document.querySelectorAll('.tab').forEach(tt=>tt.classList.remove('active'));t.classList.add('active');loadProfileTab(t.dataset.tab)}});
-            document.getElementById('closeSearch').onclick=()=>document.getElementById('searchModal').classList.remove('active');
             document.getElementById('doSearch').onclick=doSearch;
             document.getElementById('searchInput').onkeypress=e=>{if(e.key==='Enter')doSearch()};
         }

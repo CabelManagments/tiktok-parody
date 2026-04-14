@@ -8,11 +8,14 @@
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{font-family:system-ui,sans-serif;background:#000;color:#fff;overflow:hidden;height:100vh}
-        .feed{height:100vh;overflow-y:scroll;scroll-snap-type:y mandatory}
-        .video-card{scroll-snap-align:start;height:100vh;position:relative;background:#000;display:flex;align-items:center;justify-content:center}
-        video{height:100vh;width:auto;max-width:100vw;object-fit:contain}
+        .feed{height:calc(100vh - 60px);overflow-y:scroll;scroll-snap-type:y mandatory;margin-bottom:60px}
+        .video-card{scroll-snap-align:start;height:calc(100vh - 60px);position:relative;background:#000;display:flex;align-items:center;justify-content:center}
+        video{height:calc(100vh - 60px);width:auto;max-width:100vw;object-fit:contain}
         .info{position:absolute;bottom:20px;left:16px;right:80px;z-index:10}
         .author{font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+        .hashtag{color:#fe2c55;cursor:pointer;margin-right:6px;display:inline-block}
+        .hashtag:hover{text-decoration:underline}
+        .stats{display:flex;gap:12px;margin-top:5px;font-size:12px;opacity:0.8}
         .repost-badge{display:inline-flex;align-items:center;gap:4px;background:rgba(0,0,0,0.5);backdrop-filter:blur(10px);padding:4px 10px;border-radius:20px;font-size:12px;font-weight:normal;margin-left:8px}
         .repost-badge img{width:18px;height:18px;border-radius:50%}
         .description{font-size:13px;opacity:0.9;margin-top:4px}
@@ -24,8 +27,14 @@
         .pause-overlay.show{opacity:1}
         .pause-icon{width:70px;height:70px;background:rgba(255,255,255,0.2);border-radius:50%;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(10px)}
         .pause-icon svg{width:40px;height:40px;fill:#fff}
-        .header{position:fixed;top:0;left:0;right:0;z-index:100;padding:50px 16px 20px;display:flex;justify-content:flex-end;background:linear-gradient(to bottom,rgba(0,0,0,0.5),transparent)}
+        .bottom-nav{position:fixed;bottom:0;left:0;right:0;background:#111;display:flex;justify-content:space-around;padding:10px 0;z-index:100;border-top:0.5px solid #333}
+        .nav-btn{background:none;border:none;color:#888;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px}
+        .nav-btn.active{color:#fe2c55}
+        .header{position:fixed;top:0;left:0;right:0;z-index:100;padding:50px 16px 20px;display:flex;justify-content:space-between;background:linear-gradient(to bottom,rgba(0,0,0,0.5),transparent)}
         .header-btn{background:rgba(0,0,0,0.6);backdrop-filter:blur(10px);border:none;color:#fff;padding:6px 16px;border-radius:30px;cursor:pointer}
+        .search-bar{display:flex;gap:8px;padding:10px;background:#1a1a1a;margin:10px;border-radius:30px}
+        .search-input{flex:1;background:transparent;border:none;color:#fff;padding:8px;outline:none}
+        .search-btn{background:#fe2c55;border:none;padding:8px 16px;border-radius:25px;color:#fff;cursor:pointer}
         .modal,.chats-modal,.share-modal,.comments-modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:#000;z-index:200;overflow-y:auto}
         .modal.active,.chats-modal.active,.share-modal.active,.comments-modal.active{display:block}
         .modal-header{position:sticky;top:0;background:#000;padding:20px;display:flex;justify-content:space-between;border-bottom:1px solid #333}
@@ -47,9 +56,9 @@
         .send-btn{background:#fe2c55;border:none;padding:10px 20px;border-radius:25px;color:#fff;cursor:pointer}
         .comment-item{padding:12px 15px;border-bottom:0.5px solid #333}
         .comment-author{font-weight:700;font-size:14px}
-        .upload-bar{position:fixed;bottom:0;left:0;right:0;background:rgba(20,20,25,0.95);backdrop-filter:blur(20px);padding:10px 12px;display:flex;gap:8px;z-index:100;transform:translateY(100%);transition:0.3s}
+        .upload-bar{position:fixed;bottom:60px;left:0;right:0;background:rgba(20,20,25,0.95);backdrop-filter:blur(20px);padding:10px 12px;display:flex;gap:8px;z-index:100;transform:translateY(100%);transition:0.3s}
         .upload-bar.active{transform:translateY(0)}
-        .upload-toggle{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);background:#fe2c55;border:none;color:#fff;padding:8px 20px;border-radius:30px;z-index:101;cursor:pointer}
+        .upload-toggle{position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#fe2c55;border:none;color:#fff;padding:8px 20px;border-radius:30px;z-index:101;cursor:pointer}
         .upload-bar input,.upload-bar button{background:#2a2a2e;border:none;padding:8px 12px;border-radius:25px;color:#fff}
         .upload-bar button{background:#fe2c55;cursor:pointer}
         .profile-video{width:calc(33.33% - 6px);margin:3px;aspect-ratio:9/16;background:#111;border-radius:8px;overflow:hidden}
@@ -60,83 +69,118 @@
         .empty-state{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center}
         .feed::-webkit-scrollbar{display:none}
         .streak-toast{position:fixed;top:80px;left:50%;transform:translateX(-50%);background:#fe2c55;padding:8px 20px;border-radius:30px;z-index:300;animation:slideDown 0.3s;display:flex;align-items:center;gap:8px}
-        .repost-toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);backdrop-filter:blur(20px);padding:12px 20px;border-radius:40px;z-index:300;display:flex;align-items:center;gap:12px;animation:slideUp 0.3s}
+        .repost-toast{position:fixed;bottom:120px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);backdrop-filter:blur(20px);padding:12px 20px;border-radius:40px;z-index:300;display:flex;align-items:center;gap:12px;animation:slideUp 0.3s}
         @keyframes slideDown{from{opacity:0;transform:translateX(-50%) translateY(-20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
         @keyframes slideUp{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
         .toast-icon{width:18px;height:18px;border-radius:50%}
         .floating-heart{position:fixed;pointer-events:none;z-index:999;font-size:40px;animation:floatUp 1s ease-out forwards}
         @keyframes floatUp{0%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:0;transform:translateY(-100px) scale(1.5)}}
         
-        @media (max-width: 768px) {
-            .right-actions { gap: 12px; bottom: 20px; right: 8px; }
-            .action-icon { width: 40px; height: 40px; }
-            .action-icon img { width: 36px; height: 36px; }
-            .info { bottom: 15px; left: 12px; right: 70px; }
-            .author { font-size: 13px; }
-            .description { font-size: 11px; }
-            .upload-toggle { bottom: 15px; padding: 8px 16px; font-size: 12px; }
-            .upload-bar { flex-direction: column; gap: 6px; padding: 8px 12px; }
-            .upload-bar input, .upload-bar button { width: 100%; font-size: 14px; padding: 10px; }
-            .upload-bar.active { padding-bottom: 70px; }
-            .header { padding: 40px 12px 15px; }
-            .header-btn { padding: 4px 12px; font-size: 12px; }
-        }
-        @media (max-width: 480px) {
-            .right-actions { gap: 10px; }
-            .action-icon { width: 36px; height: 36px; }
-            .action-icon img { width: 32px; height: 32px; }
-            .info { bottom: 12px; left: 10px; right: 60px; }
-            .author { font-size: 12px; }
-            .description { font-size: 10px; }
-            .upload-toggle { bottom: 12px; padding: 6px 14px; font-size: 11px; }
+        @media (max-width: 768px){
+            .right-actions{gap:12px;bottom:20px;right:8px}
+            .action-icon{width:40px;height:40px}
+            .action-icon img{width:36px;height:36px}
+            .info{bottom:15px;left:12px;right:70px}
+            .author{font-size:13px}
+            .description{font-size:11px}
+            .upload-toggle{bottom:70px;padding:8px 16px;font-size:12px}
+            .upload-bar{flex-direction:column;gap:6px;padding:8px 12px}
+            .upload-bar input,.upload-bar button{width:100%;font-size:14px;padding:10px}
+            .upload-bar.active{padding-bottom:70px}
+            .header{padding:40px 12px 15px}
+            .header-btn{padding:4px 12px;font-size:12px}
         }
     </style>
 </head>
 <body>
     <div class="header">
-        <button class="header-btn" id="chatsBtn">💬 Чаты</button>
         <button class="header-btn" id="profileBtn">👤 Профиль</button>
     </div>
     <div class="feed" id="feed"><div class="empty-state" id="emptyState"><div style="font-size:60px">🎬</div><div>Нет видео</div></div></div>
     <button class="upload-toggle" id="uploadToggle">📤 Загрузить</button>
     <div class="upload-bar" id="uploadBar">
         <input type="text" id="author" placeholder="Имя" value="Пользователь">
-        <input type="text" id="desc" placeholder="Описание">
+        <input type="text" id="desc" placeholder="Описание с #хэштегами">
         <input type="file" id="videoFile" accept="video/*">
         <button id="uploadBtn">✅</button>
+    </div>
+    <div class="bottom-nav">
+        <button class="nav-btn active" data-feed="all">🏠 Для тебя</button>
+        <button class="nav-btn" data-feed="recommendations">🎯 Рекоменд</button>
+        <button class="nav-btn" id="historyBtn">📜 История</button>
+        <button class="nav-btn" id="searchBtn">🔍 Поиск</button>
+        <button class="nav-btn" id="chatsBtnNav">💬 Чаты</button>
     </div>
     <div class="chats-modal" id="chatsModal"><div class="modal-header"><h3>💬 Чаты</h3><button id="closeChats" style="background:none;border:none;color:#fff;font-size:24px">✕</button></div><div id="chatsList"></div><div style="padding:15px"><button id="newChatBtn" style="background:#fe2c55;border:none;padding:12px;border-radius:30px;color:#fff;width:100%">➕ Новый чат</button></div></div>
     <div class="share-modal" id="shareModal"><div class="modal-header"><h3 id="shareModalTitle">Выберите пользователя</h3><button id="closeShare" style="background:none;border:none;color:#fff;font-size:24px">✕</button></div><div id="usersList"></div></div>
     <div class="modal" id="chatModal"><div class="modal-header"><h3 id="chatWithUser">Чат</h3><button id="closeChat" style="background:none;border:none;color:#fff;font-size:24px">✕</button></div><div class="messages-container" id="messagesContainer"></div><div class="message-input-area"><input type="text" class="message-input" id="messageInput" placeholder="Сообщение..."><button class="send-btn" id="sendMessageBtn">Отпр</button></div></div>
     <div class="comments-modal" id="commentsModal"><div class="modal-header"><h3>💬 Комментарии</h3><button id="closeComments" style="background:none;border:none;color:#fff;font-size:24px">✕</button></div><div id="commentsList" style="padding-bottom:80px"></div><div class="comment-input-area"><input type="text" class="comment-input" id="commentInput" placeholder="Комментарий..."><button class="send-btn" id="sendCommentBtn">Отпр</button></div></div>
-    <div class="modal" id="profileModal"><div class="modal-header"><h3 id="profileUsername">Профиль</h3><button id="closeProfileModal" style="background:none;border:none;color:#fff;font-size:24px">✕</button></div><div class="modal-tabs"><button class="tab active" data-tab="all">Все видео</button><button class="tab" data-tab="liked">Лайки</button><button class="tab" data-tab="favorite">Избранное</button></div><div class="modal-content" id="modalContent" style="padding:20px;display:flex;flex-wrap:wrap"></div></div>
+    <div class="modal" id="profileModal"><div class="modal-header"><h3 id="profileUsername">Профиль</h3><button id="closeProfileModal" style="background:none;border:none;color:#fff;font-size:24px">✕</button></div><div class="modal-tabs"><button class="tab active" data-tab="all">Все видео</button><button class="tab" data-tab="liked">Лайки</button><button class="tab" data-tab="favorite">Избранное</button><button class="tab" data-tab="history">История</button></div><div class="modal-content" id="modalContent" style="padding:20px;display:flex;flex-wrap:wrap"></div></div>
+    <div class="modal" id="searchModal"><div class="modal-header"><h3>🔍 Поиск по хэштегам</h3><button id="closeSearch" style="background:none;border:none;color:#fff;font-size:24px">✕</button></div><div class="search-bar"><input type="text" id="searchInput" class="search-input" placeholder="#хэштег"><button id="doSearch" class="search-btn">Найти</button></div><div id="trendingHashtags" style="padding:15px"></div><div id="searchResults" style="padding:15px;display:flex;flex-wrap:wrap"></div></div>
     <div id="streakToast" class="streak-toast" style="display:none"></div>
     <div id="repostToast" class="repost-toast" style="display:none"></div>
     <script>
         let currentUser=null,allVideos=[],currentChatId=null,currentChatUser=null,pendingShareVideoId=null,currentCommentsVideoId=null,socket=null;
-        let observer=null,currentPlayingVideo=null;
-        let pauseTimeout=null;
-        let scrollTimeout=null;
+        let currentFeed='all',currentHashtag='',scrollTimeout=null;
         
         async function init(){await checkAuth();await loadFeed();setupEventListeners();connectSocket();loadChats();setupScrollHandler();}
-        async function checkAuth(){let r=await fetch('/api/me'),d=await r.json();if(!d.username){let n=prompt('Ваше имя:','Пользователь');if(n)await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:n})})}let mr=await fetch('/api/me');currentUser=(await mr.json()).username;document.getElementById('profileUsername').innerText=currentUser||'Профиль'}
+        async function checkAuth(){
+            let r=await fetch('/api/me'),d=await r.json();
+            if(!d.username){let n=prompt('Ваше имя:','Пользователь');if(n)await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:n})})}
+            let mr=await fetch('/api/me');currentUser=(await mr.json()).username;
+            document.getElementById('profileUsername').innerText=currentUser||'Профиль';
+        }
         function connectSocket(){
             socket=io();
             socket.on('connect',()=>socket.emit('join',{username:currentUser}));
             socket.on('new_message',(data)=>{if(currentChatId===data.chat_id)loadMessages(currentChatId);loadChats();if(data.streak)showStreakToast(data.streak)});
-            socket.on('new_comment',(data)=>{
-                if(currentCommentsVideoId===data.video_id){
-                    let cd=document.getElementById('commentsList');
-                    let nc='<div class="comment-item"><div class="comment-author">'+escapeHtml(data.comment.author)+'</div><div class="comment-text">'+escapeHtml(data.comment.text)+'</div></div>';
-                    if(cd.innerHTML.includes('Нет комментариев')) cd.innerHTML=nc;
-                    else cd.innerHTML+=nc;
-                }
-                loadFeed();
-            });
+            socket.on('new_comment',(data)=>{if(currentCommentsVideoId===data.video_id)loadFeed()});
             socket.on('streak_update',(data)=>{loadChats();if(currentChatUser===data.with_user)showStreakToast(data.streak)});
             socket.on('new_repost',(data)=>{updateRepostCount(data.video_id,data.reposts)});
             socket.on('like_update',(data)=>{updateLikeCount(data.video_id,data.likes)});
             socket.on('favorite_update',(data)=>{updateFavoriteState(data.video_id,data.is_favorite)});
+        }
+        function updateLikeCount(videoId,likes){let span=document.querySelector(`.video-card[data-video-id="${videoId}"] .right-actions button:first-child span`);if(span)span.innerText=likes;}
+        function updateRepostCount(videoId,reposts){let span=document.querySelector(`.video-card[data-video-id="${videoId}"] .right-actions button:nth-child(3) span`);if(span)span.innerText=reposts;}
+        function updateFavoriteState(videoId,isFavorite){let btn=document.querySelector(`.video-card[data-video-id="${videoId}"] .right-actions button:nth-child(2)`);if(btn){let span=btn.querySelector('span');if(span)span.innerText=isFavorite?'★':'☆';}}
+        function showStreakToast(s){let t=document.getElementById('streakToast');t.innerHTML=`<img src="https://litter.catbox.moe/off4i8kbw6ubx0uw.png" class="toast-icon"> Серийчик: ${s} дней!`;t.style.display='flex';setTimeout(()=>t.style.display='none',3000);}
+        function showRepostToast(){let t=document.getElementById('repostToast');t.innerHTML=`<img src="https://litter.catbox.moe/f38hn74sf7dz8icn.png" class="toast-icon"> <span>Вы сделали репост</span>`;t.style.display='flex';setTimeout(()=>t.style.display='none',2000);}
+        async function loadFeed(){
+            let url=`/api/videos?feed=${currentFeed}`;
+            if(currentHashtag) url+=`&hashtag=${encodeURIComponent(currentHashtag)}`;
+            let r=await fetch(url);allVideos=await r.json();renderFeed(allVideos);
+            document.querySelectorAll('.nav-btn').forEach(btn=>{if(btn.dataset.feed===currentFeed)btn.classList.add('active');else btn.classList.remove('active');});
+        }
+        async function recordView(videoId){
+            await fetch(`/api/record_view/${videoId}`,{method:'POST'});
+        }
+        function pauseAllVideos(){document.querySelectorAll('video').forEach(v=>v.pause());}
+        function syncVideoPlayback(){
+            const videos = document.querySelectorAll('video');
+            if(videos.length===0) return;
+            const feedRect = document.getElementById('feed').getBoundingClientRect();
+            const centerY = feedRect.top + feedRect.height/2;
+            let closestVideo=null,closestDist=Infinity;
+            videos.forEach(video=>{
+                const rect=video.getBoundingClientRect();
+                const videoCenter=rect.top+rect.height/2;
+                const dist=Math.abs(videoCenter-centerY);
+                if(dist<closestDist){closestDist=dist;closestVideo=video;}
+            });
+            videos.forEach(video=>{
+                if(video===closestVideo){
+                    if(video.paused) video.play().catch(e=>console.log('play error'));
+                }else{video.pause();}
+            });
+            if(closestVideo){
+                let card=closestVideo.closest('.video-card');
+                if(card) recordView(card.dataset.videoId);
+            }
+        }
+        function setupScrollHandler(){
+            const feed=document.getElementById('feed');
+            feed.addEventListener('scroll',()=>{if(scrollTimeout)clearTimeout(scrollTimeout);scrollTimeout=setTimeout(()=>{syncVideoPlayback();},50);});
+            setInterval(()=>{syncVideoPlayback();},1000);
         }
         function createFloatingHeart(x,y){
             let heart=document.createElement('div');
@@ -147,66 +191,21 @@
             document.body.appendChild(heart);
             setTimeout(()=>heart.remove(),1000);
         }
-        function updateLikeCount(videoId,likes){let span=document.querySelector(`.video-card[data-video-id="${videoId}"] .right-actions button:first-child span`);if(span)span.innerText=likes;}
-        function updateRepostCount(videoId,reposts){let span=document.querySelector(`.video-card[data-video-id="${videoId}"] .right-actions button:nth-child(3) span`);if(span)span.innerText=reposts;}
-        function updateFavoriteState(videoId,isFavorite){let btn=document.querySelector(`.video-card[data-video-id="${videoId}"] .right-actions button:nth-child(2)`);if(btn){let span=btn.querySelector('span');if(span)span.innerText=isFavorite?'★':'☆';}}
-        function showStreakToast(s){let t=document.getElementById('streakToast');t.innerHTML=`<img src="https://litter.catbox.moe/off4i8kbw6ubx0uw.png" class="toast-icon"> Серийчик: ${s} дней!`;t.style.display='flex';setTimeout(()=>t.style.display='none',3000);}
-        function showRepostToast(){let t=document.getElementById('repostToast');t.innerHTML=`<img src="https://litter.catbox.moe/f38hn74sf7dz8icn.png" class="toast-icon"> <span>Вы сделали репост</span>`;t.style.display='flex';setTimeout(()=>t.style.display='none',2000);}
-        async function loadFeed(){let r=await fetch('/api/videos');allVideos=await r.json();renderFeed(allVideos)}
-        function pauseAllVideos(){document.querySelectorAll('video').forEach(v=>v.pause());currentPlayingVideo=null;}
-        function togglePause(video,overlay){
-            if(video.paused){
-                video.play();
-                if(overlay) overlay.classList.remove('show');
-            }else{
-                video.pause();
-                if(overlay) overlay.classList.add('show');
-                if(pauseTimeout) clearTimeout(pauseTimeout);
-                pauseTimeout=setTimeout(()=>{if(overlay) overlay.classList.remove('show');},800);
-            }
+        function formatHashtags(text){
+            if(!text) return '';
+            return text.replace(/#\w+/g, match => `<span class="hashtag" onclick="searchByHashtag('${match}')">${match}</span>`);
         }
-        function syncVideoPlayback(){
-            const videos = document.querySelectorAll('video');
-            if(videos.length === 0) return;
-            const feedRect = document.getElementById('feed').getBoundingClientRect();
-            const centerY = feedRect.top + feedRect.height / 2;
-            let closestVideo = null;
-            let closestDist = Infinity;
-            videos.forEach(video => {
-                const rect = video.getBoundingClientRect();
-                const videoCenter = rect.top + rect.height / 2;
-                const dist = Math.abs(videoCenter - centerY);
-                if(dist < closestDist){
-                    closestDist = dist;
-                    closestVideo = video;
-                }
-            });
-            videos.forEach(video => {
-                if(video === closestVideo){
-                    if(video.paused) video.play().catch(e=>console.log('play error'));
-                    if(currentPlayingVideo !== video) currentPlayingVideo = video;
-                } else {
-                    video.pause();
-                }
-            });
-        }
-        function setupScrollHandler(){
-            const feed = document.getElementById('feed');
-            feed.addEventListener('scroll', () => {
-                if(scrollTimeout) clearTimeout(scrollTimeout);
-                scrollTimeout = setTimeout(() => {
-                    syncVideoPlayback();
-                }, 50);
-            });
-            setInterval(() => {
-                syncVideoPlayback();
-            }, 1000);
+        window.searchByHashtag=function(hashtag){
+            currentHashtag=hashtag;
+            currentFeed='all';
+            loadFeed();
+            document.getElementById('searchModal').classList.remove('active');
         }
         function renderFeed(v){
             let fd=document.getElementById('feed'),es=document.getElementById('emptyState');
-            if(!v.length){fd.innerHTML='';es.style.display='block';return}
+            if(!v.length){fd.innerHTML='';es.style.display='block';return;}
             es.style.display='none';
-            fd.innerHTML=v.map(v=>`<div class="video-card" data-video-src="${v.url}" data-video-id="${v.id}"><div class="pause-overlay"><div class="pause-icon"><svg viewBox="0 0 24 24"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg></div></div><div class="info"><div class="author">${escapeHtml(v.author)}${v.is_reposted ? `<span class="repost-badge"><img src="https://litter.catbox.moe/f38hn74sf7dz8icn.png"> Вы сделали репост</span>` : ''}</div><div class="description">${escapeHtml(v.description)}</div></div><div class="right-actions"><button class="action-btn" onclick="toggleLike('${v.id}')"><div class="action-icon"><img src="https://litter.catbox.moe/cc6xqtjryvn6oebj.png"></div><span>${v.likes}</span></button><button class="action-btn" onclick="toggleFavorite('${v.id}')"><div class="action-icon"><img src="https://litter.catbox.moe/m21bqybjmge8b4uw.png"></div><span>${v.is_favorite?'★':'☆'}</span></button><button class="action-btn" onclick="toggleRepost('${v.id}')"><div class="action-icon"><img src="https://litter.catbox.moe/ba4xxrmzpqx4mh09.png"></div><span>${v.reposts||0}</span></button><button class="action-btn" onclick="openComments('${v.id}')"><div class="action-icon"><img src="https://litter.catbox.moe/avrc86gvvbg2pgud.png"></div><span>${v.comments?v.comments.length:0}</span></button><button class="action-btn" onclick="shareVideo('${v.id}')"><div class="action-icon">↗️</div><span>Пересл</span></button></div></div>`).join('');
+            fd.innerHTML=v.map(v=>`<div class="video-card" data-video-id="${v.id}" data-video-src="${v.url}"><div class="pause-overlay"><div class="pause-icon"><svg viewBox="0 0 24 24"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg></div></div><div class="info"><div class="author">${escapeHtml(v.author)}</div><div class="description">${formatHashtags(escapeHtml(v.description))}</div><div class="stats"><span>👁️ ${v.views||0}</span><span>❤️ ${v.likes}</span><span>🔄 ${v.reposts||0}</span></div></div><div class="right-actions"><button class="action-btn" onclick="toggleLike('${v.id}')"><div class="action-icon"><img src="https://litter.catbox.moe/cc6xqtjryvn6oebj.png"></div><span>${v.likes}</span></button><button class="action-btn" onclick="toggleFavorite('${v.id}')"><div class="action-icon"><img src="https://litter.catbox.moe/m21bqybjmge8b4uw.png"></div><span>${v.is_favorite?'★':'☆'}</span></button><button class="action-btn" onclick="toggleRepost('${v.id}')"><div class="action-icon"><img src="https://litter.catbox.moe/ba4xxrmzpqx4mh09.png"></div><span>${v.reposts||0}</span></button><button class="action-btn" onclick="openComments('${v.id}')"><div class="action-icon"><img src="https://litter.catbox.moe/avrc86gvvbg2pgud.png"></div><span>${v.comments?v.comments.length:0}</span></button><button class="action-btn" onclick="shareVideo('${v.id}')"><div class="action-icon">↗️</div><span>Пересл</span></button></div></div>`).join('');
             setTimeout(()=>{
                 let cards=document.querySelectorAll('.video-card');
                 cards.forEach(card=>{
@@ -218,26 +217,26 @@
                             vid.loop=true;
                             vid.playsinline=true;
                             vid.preload='auto';
-                            vid.style.height='100vh';
+                            vid.style.height='calc(100vh - 60px)';
                             vid.style.width='auto';
                             vid.style.maxWidth='100vw';
                             vid.style.objectFit='contain';
                             let overlay=card.querySelector('.pause-overlay');
-                            vid.addEventListener('click',(e)=>{e.stopPropagation();togglePause(vid,overlay);});
+                            vid.addEventListener('click',(e)=>{e.stopPropagation();if(vid.paused){vid.play();overlay.classList.remove('show');}else{vid.pause();overlay.classList.add('show');setTimeout(()=>overlay.classList.remove('show'),800);}});
                             let lastTap=0;
-                            vid.addEventListener('touchend', (e) => {
-                                const currentTime = new Date().getTime();
-                                const tapLength = currentTime - lastTap;
-                                if (tapLength < 500 && tapLength > 0) {
+                            vid.addEventListener('touchend',(e)=>{
+                                const now=new Date().getTime();
+                                const tapLen=now-lastTap;
+                                if(tapLen<500&&tapLen>0){
                                     e.preventDefault();
-                                    const likeBtn = card.querySelector('.right-actions button:first-child');
+                                    let likeBtn=card.querySelector('.right-actions button:first-child');
                                     if(likeBtn){
                                         likeBtn.click();
-                                        const rect = e.changedTouches[0];
-                                        createFloatingHeart(rect.clientX, rect.clientY);
+                                        let rect=e.changedTouches[0];
+                                        createFloatingHeart(rect.clientX,rect.clientY);
                                     }
                                 }
-                                lastTap = currentTime;
+                                lastTap=now;
                             });
                             card.insertBefore(vid,card.firstChild);
                         }
@@ -246,21 +245,61 @@
                 syncVideoPlayback();
             },100);
         }
-        window.toggleLike=async function(id){let r=await fetch(`/api/toggle_like/${id}`,{method:'POST'});let d=await r.json();if(d.success){updateLikeCount(id,d.likes);}}
-        window.toggleFavorite=async function(id){let r=await fetch(`/api/toggle_favorite/${id}`,{method:'POST'});let d=await r.json();if(d.success){updateFavoriteState(id,d.is_favorite);}}
+        window.toggleLike=async function(id){let r=await fetch(`/api/toggle_like/${id}`,{method:'POST'});let d=await r.json();if(d.success)updateLikeCount(id,d.likes);}
+        window.toggleFavorite=async function(id){let r=await fetch(`/api/toggle_favorite/${id}`,{method:'POST'});let d=await r.json();if(d.success)updateFavoriteState(id,d.is_favorite);}
         window.toggleRepost=async function(id){let r=await fetch(`/api/toggle_repost/${id}`,{method:'POST'});let d=await r.json();if(d.success){updateRepostCount(id,d.reposts);showRepostToast();}}
         window.openComments=async function(id){pauseAllVideos();currentCommentsVideoId=id;let v=allVideos.find(v=>v.id===id),c=v.comments||[],cd=document.getElementById('commentsList');cd.innerHTML=c.length?c.map(c=>`<div class="comment-item"><div class="comment-author">${escapeHtml(c.author)}</div><div class="comment-text">${escapeHtml(c.text)}</div></div>`).join(''):'<div style="text-align:center;padding:40px">💬 Нет комментариев</div>';document.getElementById('commentsModal').classList.add('active');}
         window.shareVideo=function(id){pauseAllVideos();pendingShareVideoId=id;document.getElementById('shareModalTitle').innerText='Кому переслать?';document.getElementById('shareModal').classList.add('active');loadUsersForShare();}
-        async function sendComment(){let inp=document.getElementById('commentInput'),t=inp.value.trim();if(!t||!currentCommentsVideoId)return;await fetch(`/api/add_comment/${currentCommentsVideoId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,author:currentUser})});inp.value='';await loadFeed();let v=allVideos.find(v=>v.id===currentCommentsVideoId),c=v.comments||[],cd=document.getElementById('commentsList');cd.innerHTML=c.length?c.map(c=>`<div class="comment-item"><div class="comment-author">${escapeHtml(c.author)}</div><div class="comment-text">${escapeHtml(c.text)}</div></div>`).join(''):'<div style="text-align:center;padding:40px">💬 Нет комментариев</div>';}
+        async function sendComment(){let inp=document.getElementById('commentInput'),t=inp.value.trim();if(!t||!currentCommentsVideoId)return;await fetch(`/api/add_comment/${currentCommentsVideoId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,author:currentUser})});inp.value='';await loadFeed();}
         async function loadUsersForShare(){let r=await fetch('/api/users'),u=await r.json(),ud=document.getElementById('usersList');ud.innerHTML=u.length?u.map(u=>`<div class="user-item" onclick="sendSharedVideo('${escapeHtml(u)}')"><div>${escapeHtml(u)}</div><div>📤</div></div>`).join(''):'<div style="padding:20px;text-align:center">Нет пользователей</div>'}
         window.sendSharedVideo=async function(tu){let r=await fetch('/api/share_video',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_user:tu,video_id:pendingShareVideoId,text:'📹 Поделился видео'})});if((await r.json()).success){alert('Отправлено!');document.getElementById('shareModal').classList.remove('active');loadChats()}}
         async function loadChats(){let r=await fetch('/api/chats'),c=await r.json(),cd=document.getElementById('chatsList');cd.innerHTML=c.length?c.map(c=>`<div class="chat-item" onclick="openChat('${c.id}','${escapeHtml(c.with_user)}')"><div><div class="chat-name">${escapeHtml(c.with_user)}${c.streak>0?`<span class="streak-badge"><img src="https://litter.catbox.moe/off4i8kbw6ubx0uw.png" class="streak-icon"> ${c.streak}</span>`:''}</div><div class="chat-last">${escapeHtml(c.last_message||'')}</div></div><div>${c.streak>=3?`<img src="https://litter.catbox.moe/off4i8kbw6ubx0uw.png" class="pet-icon">`:'💬'}</div></div>`).join(''):'<div style="padding:20px;text-align:center">Нет чатов</div>'}
         window.openChat=async function(id,user){pauseAllVideos();currentChatId=id;currentChatUser=user;document.getElementById('chatWithUser').innerText=user;document.getElementById('chatModal').classList.add('active');await loadMessages(id)}
         async function loadMessages(id){let r=await fetch(`/api/chat/${id}`),m=await r.json(),c=document.getElementById('messagesContainer');c.innerHTML=m.map(m=>`<div class="message ${m.from===currentUser?'from-me':''}"><div class="message-bubble">${m.type==='video'?`📹 ${escapeHtml(m.text)}<div class="shared-video"><video src="${m.video_url}" controls preload="metadata"></video><div style="font-size:11px">${escapeHtml(m.video_author)}: ${escapeHtml(m.video_description)}</div></div>`:`<div>${escapeHtml(m.text)}</div>`}</div><div class="message-time">${m.time}</div></div>`).join('');c.scrollTop=c.scrollHeight}
         async function sendMessage(){let inp=document.getElementById('messageInput'),t=inp.value.trim();if(!t||!currentChatUser)return;let r=await fetch('/api/send_message',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_user:currentChatUser,text:t,chat_id:currentChatId})}),d=await r.json();if(d.success){inp.value='';currentChatId=d.chat_id;await loadMessages(currentChatId);await loadChats();if(d.streak)showStreakToast(d.streak)}}
+        async function loadWatchHistory(){
+            let r=await fetch('/api/watch_history');return await r.json();
+        }
+        async function loadProfileTab(type){
+            let mc=document.getElementById('modalContent');
+            if(type==='history'){
+                let videos=await loadWatchHistory();
+                if(!videos.length){mc.innerHTML='<div style="text-align:center;padding:40px">😢 Нет истории</div>';return;}
+                mc.innerHTML=videos.map(v=>`<div class="profile-video"><video src="${v.url}" muted loop preload="metadata"></video></div>`).join('');
+                document.querySelectorAll('.profile-video video').forEach(v=>{v.play();v.onmouseenter=()=>v.play();v.onmouseleave=()=>v.pause();});
+                return;
+            }
+            let url=type==='liked'?'/api/user_videos/liked':type==='favorite'?'/api/user_videos/favorite':'/api/videos';
+            let r=await fetch(url),v=await r.json();
+            if(type==='all')v=v.filter(v=>v.author===currentUser);
+            if(!v.length){mc.innerHTML='<div style="text-align:center;padding:40px">😢 Нет видео</div>';return;}
+            mc.innerHTML=v.map(v=>`<div class="profile-video"><video src="${v.url}" muted loop preload="metadata"></video></div>`).join('');
+            document.querySelectorAll('.profile-video video').forEach(v=>{v.play();v.onmouseenter=()=>v.play();v.onmouseleave=()=>v.pause();});
+        }
+        async function loadTrendingHashtags(){
+            let r=await fetch('/api/hashtags'),ht=await r.json();
+            let div=document.getElementById('trendingHashtags');
+            if(ht.length){
+                div.innerHTML='<div style="margin-bottom:10px;color:#888">🔥 Популярные хэштеги:</div>'+ht.map(h=>`<span class="hashtag" style="background:#2a2a2e;padding:5px 12px;border-radius:20px;margin:5px;display:inline-block" onclick="searchByHashtag('${h.tag}')">${h.tag} (${h.count})</span>`).join('');
+            }else{
+                div.innerHTML='<div style="color:#888">Нет популярных хэштегов</div>';
+            }
+        }
+        async function doSearch(){
+            let query=document.getElementById('searchInput').value.trim();
+            if(!query) return;
+            currentHashtag=query;
+            currentFeed='all';
+            await loadFeed();
+            document.getElementById('searchModal').classList.remove('active');
+        }
         function setupEventListeners(){
             document.getElementById('uploadToggle').onclick=()=>{let ub=document.getElementById('uploadBar');ub.classList.toggle('active');document.getElementById('uploadToggle').textContent=ub.classList.contains('active')?'✕':'📤'};
             document.getElementById('uploadBtn').onclick=async()=>{let f=document.getElementById('videoFile').files[0];if(!f)return alert('Выбери видео');let fd=new FormData();fd.append('video',f);fd.append('author',document.getElementById('author').value);fd.append('description',document.getElementById('desc').value);let r=await fetch('/api/upload',{method:'POST',body:fd});if((await r.json()).success){alert('Загружено!');location.reload()}};
+            document.querySelectorAll('.nav-btn').forEach(btn=>{btn.onclick=()=>{if(btn.id==='chatsBtnNav'){pauseAllVideos();document.getElementById('chatsModal').classList.add('active');loadChats();return;}
+            if(btn.id==='historyBtn'){currentFeed='all';currentHashtag='';loadFeed();document.getElementById('profileModal').classList.add('active');document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelector('[data-tab="history"]').classList.add('active');loadProfileTab('history');return;}
+            if(btn.id==='searchBtn'){document.getElementById('searchModal').classList.add('active');loadTrendingHashtags();return;}
+            currentFeed=btn.dataset.feed;currentHashtag='';loadFeed();};});
             document.getElementById('chatsBtn').onclick=()=>{pauseAllVideos();document.getElementById('chatsModal').classList.add('active');loadChats()};
             document.getElementById('closeChats').onclick=()=>document.getElementById('chatsModal').classList.remove('active');
             document.getElementById('newChatBtn').onclick=async()=>{pauseAllVideos();document.getElementById('shareModalTitle').innerText='Выберите пользователя';document.getElementById('shareModal').classList.add('active');let r=await fetch('/api/users'),u=await r.json();document.getElementById('usersList').innerHTML=u.map(u=>`<div class="user-item" onclick="openChatWithUser('${escapeHtml(u)}')"><div>${escapeHtml(u)}</div><div>💬</div></div>`).join('')};
@@ -275,9 +314,11 @@
             document.getElementById('profileBtn').onclick=()=>{pauseAllVideos();document.getElementById('profileModal').classList.add('active');loadProfileTab('all')};
             document.getElementById('closeProfileModal').onclick=()=>document.getElementById('profileModal').classList.remove('active');
             document.querySelectorAll('.tab').forEach(t=>{t.onclick=()=>{document.querySelectorAll('.tab').forEach(tt=>tt.classList.remove('active'));t.classList.add('active');loadProfileTab(t.dataset.tab)}});
+            document.getElementById('closeSearch').onclick=()=>document.getElementById('searchModal').classList.remove('active');
+            document.getElementById('doSearch').onclick=doSearch;
+            document.getElementById('searchInput').onkeypress=e=>{if(e.key==='Enter')doSearch()};
         }
-        async function loadProfileTab(type){let mc=document.getElementById('modalContent'),url=type==='liked'?'/api/user_videos/liked':type==='favorite'?'/api/user_videos/favorite':'/api/videos',r=await fetch(url),v=await r.json();if(type==='all')v=v.filter(v=>v.author===currentUser);if(!v.length){mc.innerHTML='<div style="text-align:center;padding:40px">😢 Нет видео</div>';return}mc.innerHTML=v.map(v=>`<div class="profile-video"><video src="${v.url}" muted loop preload="metadata"></video></div>`).join('');document.querySelectorAll('.profile-video video').forEach(v=>{v.play();v.onmouseenter=()=>v.play();v.onmouseleave=()=>v.pause()})}
-        function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>m==='&'?'&amp;':m==='<'?'&lt;':'&gt;')}
+        function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>m==='&'?'&amp;':m==='<'?'&lt;':'&gt;');}
         init();
     </script>
 </body>

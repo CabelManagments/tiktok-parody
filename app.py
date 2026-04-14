@@ -2,9 +2,7 @@ import os, json, uuid
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, send_from_directory, url_for, session
 from flask_socketio import SocketIO, emit, join_room
-import boto3
-from botocore.config import Config
-from botocore.exceptions import ClientError
+import re
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'supersecretkey123'
@@ -12,43 +10,15 @@ app.config['UPLOAD_FOLDER'] = 'static/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 ALLOWED_EXTENSIONS = {'mp4', 'mov', 'avi', 'mkv', 'webm'}
 
-# Настройки Backblaze B2 из переменных окружения Render
-B2_ACCESS_KEY = os.environ.get('B2_ACCESS_KEY', '')
-B2_SECRET_KEY = os.environ.get('B2_SECRET_KEY', '')
-B2_ENDPOINT = os.environ.get('B2_ENDPOINT', 'https://s3.us-east-005.backblazeb2.com')
-B2_BUCKET = os.environ.get('B2_BUCKET', 'TADT-videos')
-
-if not B2_ACCESS_KEY or not B2_SECRET_KEY:
-    print("⚠️ WARNING: B2 credentials not set. Videos will be stored locally!")
-
-# Инициализируем клиент B2
-s3 = boto3.client(
-    's3',
-    endpoint_url=B2_ENDPOINT,
-    aws_access_key_id=B2_ACCESS_KEY,
-    aws_secret_access_key=B2_SECRET_KEY,
-    config=Config(signature_version='s3v4')
-)
-
 socketio = SocketIO(app, cors_allowed_origins="*")
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 DB_FILE = 'data.json'
 
 def allowed_file(f): return '.' in f and f.rsplit('.',1)[1].lower() in ALLOWED_EXTENSIONS
 
-def generate_signed_url(filename, expiration=3600):
-    if not B2_ACCESS_KEY:
-        return None
-    try:
-        url = s3.generate_presigned_url(
-            'get_object',
-            Params={'Bucket': B2_BUCKET, 'Key': filename},
-            ExpiresIn=expiration
-        )
-        return url
-    except ClientError as e:
-        print(f"Error generating signed URL: {e}")
-        return None
+def extract_hashtags(text):
+    """Извлекает хэштеги из текста"""
+    return re.findall(r'#\w+', text)
 
 def load_data():
     if not os.path.exists(DB_FILE): return {"videos": [], "users": {}, "chats": {}, "streaks": {}}
@@ -61,9 +31,14 @@ def load_data():
             for v in d['videos']:
                 if 'reposts' not in v: v['reposts'] = 0
                 if 'reposted_by' not in v: v['reposted_by'] = []
+                if 'views' not in v: v['views'] = 0
+                if 'hashtags' not in v: v['hashtags'] = []
+                if 'view_history' not in v: v['view_history'] = []
             for u in d['users']:
                 if 'reposted_videos' not in d['users'][u]:
                     d['users'][u]['reposted_videos'] = []
+                if 'watch_history' not in d['users'][u]:
+                    d['users'][u]['watch_history'] = []
             return d
     except: return {"videos": [], "users": {}, "chats": {}, "streaks": {}}
 
@@ -94,6 +69,40 @@ def update_streak(user1, user2):
     socketio.emit('streak_update', {'with_user': user1, 'streak': streak['count']}, room=user2)
     return streak['count']
 
+def get_recommendations(user, limit=20):
+    """Рекомендации на основе лайков и избранного"""
+    data = load_data()
+    if user not in data['users']:
+        return []
+    
+    liked = set(data['users'][user].get('liked_videos', []))
+    favorited = set(data['users'][user].get('favorite_videos', []))
+    
+    # Собираем авторов из лайков и избранного
+    authors = set()
+    for v in data['videos']:
+        if v['id'] in liked or v['id'] in favorited:
+            authors.add(v['author'])
+    
+    # Рекомендуем видео от этих авторов, которые ещё не лайкнуты/в избранном
+    recommendations = []
+    for v in data['videos']:
+        if v['author'] in authors and v['id'] not in liked and v['id'] not in favorited:
+            recommendations.append(v)
+        if len(recommendations) >= limit:
+            break
+    
+    # Если мало рекомендаций, добиваем популярными
+    if len(recommendations) < limit:
+        popular = sorted(data['videos'], key=lambda x: x.get('views', 0), reverse=True)
+        for v in popular:
+            if v not in recommendations and v['id'] not in liked:
+                recommendations.append(v)
+            if len(recommendations) >= limit:
+                break
+    
+    return recommendations
+
 @app.route('/')
 def index(): return render_template('index.html')
 
@@ -102,7 +111,7 @@ def login():
     username = request.json.get('username', 'Аноним').strip() or 'Аноним'
     data = load_data()
     if username not in data['users']:
-        data['users'][username] = {'liked_videos': [], 'favorite_videos': [], 'reposted_videos': []}
+        data['users'][username] = {'liked_videos': [], 'favorite_videos': [], 'reposted_videos': [], 'watch_history': []}
         save_data(data)
     session['username'] = username
     return jsonify({'success': True, 'username': username})
@@ -113,15 +122,23 @@ def me(): return jsonify({'username': session.get('username')})
 @app.route('/api/videos', methods=['GET'])
 def get_videos():
     data = load_data()
-    videos = data.get('videos', [])
     cur = session.get('username')
+    feed_type = request.args.get('feed', 'all')
+    hashtag = request.args.get('hashtag', '')
+    
+    if feed_type == 'recommendations' and cur:
+        videos = get_recommendations(cur)
+    elif hashtag:
+        videos = [v for v in data['videos'] if hashtag in v.get('hashtags', [])]
+    else:
+        videos = data.get('videos', [])
+    
     for v in videos:
-        if v.get('storage') == 'b2' and B2_ACCESS_KEY:
-            v['url'] = generate_signed_url(v['filename'])
-        else:
-            v['url'] = url_for('uploaded_file', filename=v['filename'])
+        v['url'] = url_for('uploaded_file', filename=v['filename'])
         if 'comments' not in v: v['comments'] = []
         if 'reposts' not in v: v['reposts'] = 0
+        if 'views' not in v: v['views'] = 0
+        if 'hashtags' not in v: v['hashtags'] = []
         if cur and cur in data.get('users', {}):
             u = data['users'][cur]
             v['is_liked'] = v['id'] in u.get('liked_videos', [])
@@ -130,6 +147,57 @@ def get_videos():
         else:
             v['is_liked'] = v['is_favorite'] = v['is_reposted'] = False
     return jsonify(videos)
+
+@app.route('/api/record_view/<video_id>', methods=['POST'])
+def record_view(video_id):
+    cur = session.get('username')
+    if not cur:
+        return jsonify({'error': 'No auth'}), 401
+    
+    data = load_data()
+    for v in data['videos']:
+        if v['id'] == video_id:
+            v['views'] = v.get('views', 0) + 1
+            if cur not in v.get('view_history', []):
+                v.setdefault('view_history', []).append(cur)
+            break
+    
+    if cur in data['users']:
+        history = data['users'][cur].get('watch_history', [])
+        if video_id in history:
+            history.remove(video_id)
+        history.insert(0, video_id)
+        data['users'][cur]['watch_history'] = history[:50]  # храним последние 50
+    
+    save_data(data)
+    return jsonify({'success': True})
+
+@app.route('/api/watch_history', methods=['GET'])
+def watch_history():
+    cur = session.get('username')
+    if not cur:
+        return jsonify([])
+    
+    data = load_data()
+    history_ids = data['users'].get(cur, {}).get('watch_history', [])
+    videos = []
+    for vid in history_ids:
+        for v in data['videos']:
+            if v['id'] == vid:
+                v['url'] = url_for('uploaded_file', filename=v['filename'])
+                videos.append(v)
+                break
+    return jsonify(videos)
+
+@app.route('/api/hashtags', methods=['GET'])
+def get_hashtags():
+    data = load_data()
+    hashtags = {}
+    for v in data['videos']:
+        for ht in v.get('hashtags', []):
+            hashtags[ht] = hashtags.get(ht, 0) + 1
+    sorted_hashtags = sorted(hashtags.items(), key=lambda x: x[1], reverse=True)
+    return jsonify([{'tag': ht, 'count': c} for ht, c in sorted_hashtags[:20]])
 
 @app.route('/api/users', methods=['GET'])
 def get_users():
@@ -205,13 +273,8 @@ def share_video():
         chat_id = uuid.uuid4().hex
         data['chats'][chat_id] = {'id': chat_id, 'participants': [cur, target], 'messages': []}
     
-    if video.get('storage') == 'b2' and B2_ACCESS_KEY:
-        video_url = generate_signed_url(video['filename'])
-    else:
-        video_url = url_for('uploaded_file', filename=video['filename'])
-    
     msg = {'id': uuid.uuid4().hex, 'from': cur, 'type': 'video', 'video_id': video_id,
-           'video_url': video_url,
+           'video_url': url_for('uploaded_file', filename=video['filename']),
            'video_author': video['author'], 'video_description': video['description'],
            'text': request.json.get('text', '📹 Поделился видео'),
            'time': datetime.now().strftime('%H:%M'), 'timestamp': datetime.now().isoformat()}
@@ -232,32 +295,17 @@ def upload():
     
     ext = f.filename.rsplit('.',1)[1].lower()
     new_filename = f"{uuid.uuid4().hex}.{ext}"
+    f.save(os.path.join(app.config['UPLOAD_FOLDER'], new_filename))
     
-    storage = 'local'
-    if B2_ACCESS_KEY and B2_SECRET_KEY:
-        try:
-            s3.upload_fileobj(
-                f,
-                B2_BUCKET,
-                new_filename,
-                ExtraArgs={'ContentType': f'video/{ext}'}
-            )
-            storage = 'b2'
-            print(f"Video uploaded to B2: {new_filename}")
-        except Exception as e:
-            print(f"B2 upload failed: {e}, saving locally")
-            f.seek(0)
-            f.save(os.path.join(app.config['UPLOAD_FOLDER'], new_filename))
-    else:
-        print("B2 not configured, saving locally")
-        f.save(os.path.join(app.config['UPLOAD_FOLDER'], new_filename))
+    description = request.form.get('description', '')
+    hashtags = extract_hashtags(description)
     
     data = load_data()
-    video = {'id': uuid.uuid4().hex, 'filename': new_filename, 'storage': storage,
-             'likes': 0, 'liked_by': [], 'favorited_by': [], 'reposts': 0, 
-             'reposted_by': [], 'comments': [], 
-             'description': request.form.get('description', ''),
-             'author': request.form.get('author', 'Аноним'), 'created_at': uuid.uuid4().hex}
+    video = {'id': uuid.uuid4().hex, 'filename': new_filename, 'likes': 0, 'liked_by': [],
+             'favorited_by': [], 'reposts': 0, 'reposted_by': [], 'comments': [], 
+             'views': 0, 'view_history': [], 'hashtags': hashtags,
+             'description': description,
+             'author': request.form.get('author', 'Аноним'), 'created_at': datetime.now().isoformat()}
     data['videos'].insert(0, video)
     save_data(data)
     return jsonify({'success': True, 'video': video})
@@ -270,7 +318,7 @@ def toggle_repost(video_id):
     v = next((x for x in data['videos'] if x['id'] == video_id), None)
     if not v: return jsonify({'error': 'Not found'}), 404
     if cur not in data['users']: 
-        data['users'][cur] = {'liked_videos': [], 'favorite_videos': [], 'reposted_videos': []}
+        data['users'][cur] = {'liked_videos': [], 'favorite_videos': [], 'reposted_videos': [], 'watch_history': []}
     u = data['users'][cur]
     if video_id in u.get('reposted_videos', []):
         u['reposted_videos'].remove(video_id)
@@ -308,7 +356,8 @@ def toggle_like(video_id):
     data = load_data()
     v = next((x for x in data['videos'] if x['id'] == video_id), None)
     if not v: return jsonify({'error': 'Not found'}), 404
-    if cur not in data['users']: data['users'][cur] = {'liked_videos': [], 'favorite_videos': [], 'reposted_videos': []}
+    if cur not in data['users']: 
+        data['users'][cur] = {'liked_videos': [], 'favorite_videos': [], 'reposted_videos': [], 'watch_history': []}
     u = data['users'][cur]
     if video_id in u.get('liked_videos', []):
         u['liked_videos'].remove(video_id); v['likes'] = max(0, v['likes'] - 1)
@@ -327,7 +376,8 @@ def toggle_favorite(video_id):
     data = load_data()
     v = next((x for x in data['videos'] if x['id'] == video_id), None)
     if not v: return jsonify({'error': 'Not found'}), 404
-    if cur not in data['users']: data['users'][cur] = {'liked_videos': [], 'favorite_videos': [], 'reposted_videos': []}
+    if cur not in data['users']: 
+        data['users'][cur] = {'liked_videos': [], 'favorite_videos': [], 'reposted_videos': [], 'watch_history': []}
     u = data['users'][cur]
     if video_id in u.get('favorite_videos', []):
         u['favorite_videos'].remove(video_id)
@@ -348,10 +398,7 @@ def user_videos(action):
     ids = data['users'][cur].get('liked_videos' if action == 'liked' else 'favorite_videos', [])
     videos = [v for v in data['videos'] if v['id'] in ids]
     for v in videos:
-        if v.get('storage') == 'b2' and B2_ACCESS_KEY:
-            v['url'] = generate_signed_url(v['filename'])
-        else:
-            v['url'] = url_for('uploaded_file', filename=v['filename'])
+        v['url'] = url_for('uploaded_file', filename=v['filename'])
     return jsonify(videos)
 
 @app.route('/static/uploads/<filename>')
